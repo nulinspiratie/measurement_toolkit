@@ -9,28 +9,78 @@ from qcodes.utils.dataset.doNd import do0d
 from qcodes.utils.validators import Numbers, Arrays
 
 
-class BiasScanRF():
+class QDacSweeper():
+    def __init__(self, name, qdac_channel):
+        self.name = name
+        self.qdac_channel = qdac_channel
+        self.qdac = self.qdac_channel.parent
+
+    def setup(self):
+        # Turn on sync trigger for ramp
+        self.qdac_channel.sync(1)
+        self.qdac_channel.sync_delay(0e-3)  # The sync pulse delay (s), must be positive
+        self.qdac_channel.sync_duration(1e-3)  # The sync pulse duration (secs). Default is 10 ms.
+        self.qdac_channel.v.step = None
+        self.qdac_channel.v.inter_delay = 0
+
+    def sweep(self, V_start, V_stop, duration=None, V_final=None):
+        # Verify that voltages are within range
+        if self.qdac_channel.v.vals is not None:
+            min_value = self.qdac_channel.v.vals._min_value
+            max_value = self.qdac_channel.v.vals._max_value
+            assert min_value <= min(V_start, V_stop) < max(V_start, V_stop) <= max_value
+
+            if V_final is not None:
+                assert min_value <= V_final <= max_value
+
+        # Go to initial voltage an wait a little bit
+        self.qdac_channel.sync(0)
+        self.qdac_channel.v(V_start)
+        self.qdac_channel.sync(1)
+
+        # Ramp voltage
+        self.qdac.ramp_voltages(
+            channellist=[self.qdac_channel.id],
+            v_startlist=[V_start],
+            v_endlist=[V_stop],
+            ramptime=duration
+        )
+
+        # Sleep ramp duration. Note that the ramp will have finished ~30ms earlier due to overhead)
+        time.sleep(duration)
+
+        # Ramp ch1 back to 0 V at rate specified by slope.
+        # We temporarily disable sending a sync pulse
+        if V_final is not None:
+            self.qdac_channel.sync(0)
+            self.qdac_channel.v(V_final)
+            self.qdac_channel.sync(1)
+
+
+class GateScanRF():
     def __init__(
         self, 
         RF_lockin, 
-        bias_channel, 
+        sweeper,
         demodulator_name='demod0',
         num_points=251, 
         num_traces=1,
         duration=0.2, 
-        V_range=1e-3, 
-        V_scale=1e3,
+        V_start=None,
+        V_stop=None,
+        V_scale=None,
         phase_shift=0,
         ):
         self.RF_lockin = RF_lockin
         self.daq = RF_lockin.daq
         self.demodulator_name = demodulator_name
-        self.bias_channel = bias_channel
+        self.sweeper = sweeper
 
         self.num_points = num_points
         self.num_traces = num_traces
         self.duration = duration
-        self.V_range = V_range
+        self.V_start = V_start,
+        self.V_stop = V_stop
         self.V_scale = V_scale
         self.phase_shift = phase_shift
 
@@ -40,10 +90,10 @@ class BiasScanRF():
 
     @property
     def sweep_values(self):
-        if self.V_range is None or self.num_points is None:
+        if self.V_start is None or self.V_stop is None or self.num_points is None:
             return None
         else:
-            return np.linspace(-self.V_range, self.V_range, self.num_points)
+            return np.linspace(self.V_start, self.V_stop, self.num_points)
 
     @property
     def voltages(self):
@@ -69,17 +119,10 @@ class BiasScanRF():
         self.daq.grid_cols(self.num_points)
         self.daq.grid_rows(self.num_traces)
 
-    def setup_bias_channel(self):
-        # Turn on sync trigger for ramp
-        self.bias_channel.sync(1)
-        self.bias_channel.sync_delay(0e-3)  # The sync pulse delay (s), must be positive
-        self.bias_channel.sync_duration(1e-3)  # The sync pulse duration (secs). Default is 10 ms.
-        self.bias_channel.v.step = None
-        self.bias_channel.v.inter_delay = 0
 
     def setup(self, num_points=None, num_traces=None, duration=None):
         self.setup_RF_lockin(num_points=num_points, num_traces=num_traces, duration=duration)
-        self.setup_bias_channel()
+        self.sweeper.setup()
 
     def start_RF_lockin_acquisition(self):
         self.daq._daq_module._set("endless", 0)
@@ -88,46 +131,6 @@ class BiasScanRF():
             self.daq._daq_module._module.subscribe(path)
             # print(f'subscribed to {path}')
         self.daq._daq_module._module.execute()
-
-    def ramp_bias(self, V_range=None, V_scale=None, duration=None, V_final=0):
-        if V_range is not None:
-            self.V_range = V_range
-        if V_scale is not None:
-            self.V_scale = V_scale
-        if duration is not None:
-            self.duration = duration
-
-        V_start = -self.V_range*self.V_scale
-        V_stop = self.V_range*self.V_scale
-
-        # Verify that voltages are within range
-        if self.bias_channel.v.vals is not None:
-            min_value = self.bias_channel.v.vals._min_value
-            max_value = self.bias_channel.v.vals._max_value
-            assert min_value < min(V_start, V_stop) < max(V_start, V_stop) < max_value
-
-        # Go to initial voltage an wait a little bit
-        self.bias_channel.sync(0)
-        self.bias_channel.v(V_start)
-        self.bias_channel.sync(1)
-
-        # Ramp voltage
-        self.bias_channel.parent.ramp_voltages(
-            channellist=[self.bias_channel.id],
-            v_startlist=[V_start],
-            v_endlist=[V_stop],
-            ramptime=self.duration
-        )
-
-        # Sleep ramp duration. Note that the ramp will have finished ~30ms earlier due to overhead)
-        time.sleep(self.duration)
-
-        # Ramp ch1 back to 0 V at rate specified by slope.
-        # We temporarily disable sending a sync pulse
-        if V_final is not None:
-            self.bias_channel.sync(0)
-            self.bias_channel.v(V_final)
-            self.bias_channel.sync(1)
 
     def wait_acquisition_complete(self, timeout=5, t_start=None, silent=True):
         if t_start is None:
@@ -172,8 +175,6 @@ class BiasScanRF():
         num_points=None, 
         num_traces=None, 
         duration=None, 
-        V_range=None, 
-        V_final=0,
         ):
         if setup:
             self.setup(num_points=num_points, num_traces=num_traces, duration=duration)
@@ -181,26 +182,27 @@ class BiasScanRF():
         self.start_RF_lockin_acquisition()
         t_start = time.perf_counter()
 
-        self.ramp_bias(V_range=V_range, duration=duration, V_final=V_final)
+        self.sweeper.ramp()
 
         if finalize:
             self.wait_acquisition_complete(timeout=5, t_start=t_start)
-            
             results = self.process_acquisition()
+        else:
+            results = None
 
         if save_results:
-            setpoints_V_bias = Parameter(
-                'V_bias', unit='V', get_cmd=partial(getattr, self, 'voltages'),
+            setpoints_gate = Parameter(
+                self.sweeper.name, unit='V', get_cmd=partial(getattr, self, 'voltages'),
                 vals=Arrays(shape=(self.num_points, ))
             )
             measure_parameter = ParameterWithSetpoints(
                 'RF_signal', 
                 unit='V', 
-                setpoints=(setpoints_V_bias,),
+                setpoints=(setpoints_gate,),
                 vals=Arrays(shape=(self.num_points, ), valid_types=(np.complex, np.float)),
                 get_cmd=lambda: results['phase_shifted']
             )
-            do0d(measure_parameter, measurement_name='1D:bias_scan_RF')
+            do0d(measure_parameter, measurement_name=f'1D:{self.sweeper.name}_scan_RF')
 
         return results
 
@@ -249,7 +251,7 @@ class BiasScanRF():
 
         for V in voltages:
             gate(V)
-            self.ramp_bias()
+            self.sweeper.ramp()
 
             if not silent:
                 clear_output()
@@ -259,21 +261,20 @@ class BiasScanRF():
         results = self.process_acquisition()
 
         if save_results:
-            setpoints_gate = Parameter(
+            setpoints_slow_gate = Parameter(
                 gate.name, label=gate.label, unit='V', 
                 get_cmd=lambda: voltages,
                 vals=Arrays(shape=(num, ))
             )
-            setpoints_V_bias = Parameter(
-                'V_bias', unit='V', get_cmd=partial(getattr, self, 'voltages'),
+            setpoints_fast_gate = Parameter(
+                self.sweeper.name, unit='V', get_cmd=partial(getattr, self, 'voltages'),
                 vals=Arrays(shape=(self.num_points,))
             )
             measure_parameter = ParameterWithSetpoints(
                 'RF_signal', 
                 unit='V', 
-                setpoints=(setpoints_gate, setpoints_V_bias),
+                setpoints=(setpoints_slow_gate, setpoints_fast_gate),
                 vals=Arrays(shape=(num, self.num_points), valid_types=(np.complex, np.float)),
                 get_cmd=lambda: results['phase_shifted']
             )
-            do0d(measure_parameter, measurement_name=f'2D:bias_scan_RF_{gate.name}')
-
+            do0d(measure_parameter, measurement_name=f'2D:{gate.name}_{self.sweeper.name}_scan_RF')
