@@ -8,7 +8,12 @@ __all__ = [
     'initialize_from_config'
 ]
 
-def initialize_from_config(silent=False, use_mainfolder=True):
+def initialize_from_config(
+        silent=False,
+        use_mainfolder=True,
+        experiment_name=None,
+        sample_name=None
+):
     global database, exp
 
     if use_mainfolder:
@@ -19,16 +24,21 @@ def initialize_from_config(silent=False, use_mainfolder=True):
         # Note that user.mainfolder must be set in ~/qcodesrc.json
         qc.config.update_config(root_dir)
 
+    if experiment_name is None:
+        experiment_name = qc.config.user.experiment_name
+    if sample_name is None:
+        sample_name = qc.config.user.sample_name
+
     database = initialise_database()
 
     if not silent:
         print(f'Database: {qc.config.core.db_location}')
 
     exp = load_or_create_experiment(
-        experiment_name=qc.config.user.experiment_name,
-        sample_name=qc.config.user.sample_name
+        experiment_name=experiment_name,
+        sample_name=sample_name
     )
 
     if not silent:
         print(f'Experiment: {qc.config.user.experiment_name}\n'
-              f'Sample: {qc.config.user.sample_name}')
+              f'Device sample: {qc.config.user.sample_name}')

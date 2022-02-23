@@ -19,21 +19,18 @@ __all__ = [
 
 def ramp_voltages_zero():
     # QDac should be accessible from Station
-    qdac = next(val for key, val in qc.Station.default.components.items() if key.startswith('qdac'))
-    #
-    # # First ramp leaking gates
-    # for ch in [qdac.ch03, qdac.ch17, qdac.ch14]:
-    #     ch.v(0)
+    for instrument_name, instrument in qc.Station.default.components.items():
+        if not instrument_name.startswith('qdac'):
+            continue
 
-    # Now ramp all gates
-    for ch in qdac.channels:
-        ch.v(0)
+        for ch in instrument.channels:
+            ch.v(0)
 
 
 def ramp_voltages(target_voltages, other_gates_zero=True, silent=True):
     # QDac should be accessible from Station
     station = qc.Station.default
-    qdac = station.components['qdac']
+    qdac = station.qdac
     yoko = station.components['yoko']
     yoko.voltage(0)
 
@@ -66,7 +63,7 @@ def ramp_voltages(target_voltages, other_gates_zero=True, silent=True):
 def qdac_gate_voltages(show_zero=False):
     # QDac should be accessible from Station
     station = qc.Station.default
-    qdac = station.components['qdac']
+    qdac = station.qdac
 
     qdac_nonzero_voltages = {ch.id: round(ch.v(), 5) for ch in qdac.channels if abs(ch.v()) > 1e-4}
 
@@ -137,22 +134,59 @@ def check_leakages(current_limit=3e-9):
         print('No gate leakage')
 
 
+def configure_qdac(qdac, set_vhigh_ilow=False, inter_delay=30e-3, step=10e-3):
+    from qcodes.instrument_drivers.QDevil.QDevil_QDAC import Mode as QDac_mode
+
+    # Set channel ids
+    for ch_id, channel in enumerate(qdac.channels, start=1):
+        channel.id = ch_id
+
+        # Update voltage
+        channel.v()
+
+        # Set channel ranges
+        # All channels set to high voltage (+-10V) with 2 mV precision (1V has 400 uV precision)
+        # All channels set to low current (1 uA), with resolution ~0.2 nA (100 uA has 5 nA resolution)
+        mode = channel.mode()
+        if not mode == QDac_mode.vhigh_ilow:
+            print(
+                f'QDac channel {k+1:02} not set to high voltage / low current mode. '
+                f'When at 0V, run: qdac.ch{k+1:02}.mode(QDac_mode.vhigh_ilow)'\
+            )
+        # Set all gate voltages to high voltage / low current
+        if set_vhigh_ilow:
+            channel.mode(QDac_mode.vhigh_ilow)
+
+        # Set ramping
+        channel.v.inter_delay = inter_delay
+        channel.v.step = step
+
+
+def configure_qdac2(qdac):
+    for ch_id, channel in enumerate(qdac.channels, start=1):
+        channel.id = ch_id
+
+        channel.parameters.pop('i', None)
+        channel.add_parameter(
+            name='i',
+            label=f'Channel {id} current',
+            unit='A',
+            get_cmd=partial(partial(lambda ch: ch.read_current_A()[0]), channel)
+        )
+
+        channel.parameters.pop('v', None)
+        channel.add_parameter(
+            name='v',
+            label=f'Channel {id} voltage',
+            unit='V',
+            set_cmd=channel.dc_constant_V,
+            get_cmd=channel.dc_constant_V,
+            vals=vals.Numbers(-9.99, 9.99)
+        )
+
+
 
 ### In progress
-def get_array(name):
-    arrays = dataset.get_parameter_data(name)[name]
-    (_, data_1D), *raw_set_arrays_1D = list(arrays.items())
-
-    # Sort set arrays
-    set_arrays_1D = {key: val.copy() for key, val in raw_set_arrays_1D.items()}
-    set_arrays = {}
-    for k, set_array_name in set_arrays_1D:
-        set_array = set_arrays_1D[set_array_name]
-        values = set(set_array)
-
-        # Ensure all subsequent set arrays are a multiple of elements
-
-
 def gate_voltages(dataset=None, silent=False, pretty=False):
     voltages = {}
 
@@ -217,55 +251,3 @@ def get_dataset_voltages(dataset, print_nonzero=True):
                 print(f"{key}: {val:.3f} V")
     return gates
 
-
-def configure_qdac(qdac, set_vhigh_ilow=False, inter_delay=30e-3, step=10e-3):
-    from qcodes.instrument_drivers.QDevil.QDevil_QDAC import Mode as QDac_mode
-
-    # Set channel ids
-    for ch_id, channel in enumerate(qdac.channels, start=1):
-        channel.id = ch
-        
-        # Update voltage
-        channel.v()  
-        
-        # Set channel ranges
-        # All channels set to high voltage (+-10V) with 2 mV precision (1V has 400 uV precision)
-        # All channels set to low current (1 uA), with resolution ~0.2 nA (100 uA has 5 nA resolution)
-        mode = channel.mode()
-        if not mode == QDac_mode.vhigh_ilow:
-            print(
-                f'QDac channel {k+1:02} not set to high voltage / low current mode. '
-                f'When at 0V, run: qdac.ch{k+1:02}.mode(QDac_mode.vhigh_ilow)'\
-            )
-        # Set all gate voltages to high voltage / low current
-        if set_vhigh_ilow:
-            channel.mode(QDac_mode.vhigh_ilow)
-
-        # Set ramping
-        channel.v.inter_delay = inter_delay
-        channel.v.step = step
-
-
-def configure_qdac2(qdac):
-    for ch_id, channel in enumerate(qdac.channels, start=1):
-        channel.id = ch_id
-
-        channel.parameters.pop('i', None)
-        channel.add_parameter(
-            name='i',
-            label=f'Channel {id} current',
-            unit='A',
-            get_cmd=partial(partial(lambda ch: ch.read_current_A()[0]), channel)
-        )
-
-        channel.parameters.pop('v', None)
-        channel.add_parameter(
-            name='v',
-            label=f'Channel {id} voltage',
-            unit='V',
-            set_cmd=channel.dc_constant_V,
-            get_cmd=channel.dc_constant_V,
-            vals=vals.Numbers(-9.99, 9.99)
-        )
-
- 

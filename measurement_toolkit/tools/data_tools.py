@@ -162,7 +162,7 @@ def dataset_information(dataset, silent=True):
         print('Could not extract magnetic fields')
 
     try:
-        from .qdac_tools import gate_voltages
+        from measurement_toolkit.tools.instruments.qdac_tools import gate_voltages
         results['voltages'] = gate_voltages(dataset, silent=True)
         if not silent:
             gate_voltages(dataset, silent=False)
