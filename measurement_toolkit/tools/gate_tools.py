@@ -1,8 +1,18 @@
+from functools import partial
 import pandas as pd
+
+import qcodes as qc
+from qcodes.utils import validators as vals
+
 from measurement_toolkit.parameters.DC_line_parameter import DCLine
 
 
-def initialize_DC_lines(gates_excel_file, attach_to_qdac=False, namespace=None):
+def initialize_DC_lines(
+    gates_excel_file, 
+    attach_to_qdac=False, 
+    namespace=None,
+    update_monitor=True
+):
     gates_table = pd.read_excel(gates_excel_file, skiprows=[0])
     
     lines = {}
@@ -30,16 +40,12 @@ def initialize_DC_lines(gates_excel_file, attach_to_qdac=False, namespace=None):
     
     # Add gate lists to station
     station = qc.Station.default or qc.Station()
-    station.lines = lines
-    station.gates = gates
-    station.ohmics = ohmics
+    station.lines = DC_line_groups['lines']
+    station.gates = DC_line_groups['gates']
+    station.ohmics = DC_line_groups['ohmics']
 
     # Perform these operations if the station contains relevant instruments
     if attach_to_qdac:
-        for param in station._monitor_parameters.copy():    
-            if isinstance(param, DCLine):
-                station._monitor_parameters.remove(param)
-
         for instrument_name, instrument in station.components.items():
             if not instrument_name.startswith('qdac'):
                 continue
@@ -49,7 +55,50 @@ def initialize_DC_lines(gates_excel_file, attach_to_qdac=False, namespace=None):
                 instrument.parameters[name] = line
                 line._instrument = instrument
 
-                if hasattr(line, 'v'):
-                    station._monitor_parameters.append(line)
+    if update_monitor:
+        for param in station._monitor_parameters.copy():    
+            if isinstance(param, DCLine):
+                station._monitor_parameters.remove(param)
+                
+        for name, line in lines.items():
+            if hasattr(line, 'v'):
+                station._monitor_parameters.append(line)
+                
+        for gate in DC_line_groups['gates'].values():
+            qc.config.monitor.parameters_metadata[gate.name] = {'formatter': '{:.4g}'}
 
     return DC_line_groups
+
+
+def configure_DC_bias_line(voltage_parameter, voltage_scale=1e3, update_monitor=True):
+    station = qc.Station.default or qc.Station()
+
+    V_bias = qc.DelegateParameter(
+        'V_bias',
+        source=station.qdac.ch17.v,
+        scale=voltage_scale,
+        vals=vals.Numbers(-1.1e-3, 1.1e-3),
+        unit='V'
+    )
+    # Add method to update ohmics
+    def update_ohmics(V_bias, *ohmics):
+        V_bias.ohmics = ohmics
+        ohmics_str = '&'.join([f'{station.ohmics[ohmic].name}:DC{ohmic}' for ohmic in ohmics])
+        V_bias.label = f"{ohmics_str} bias voltage"
+    V_bias.update_ohmics = partial(update_ohmics, V_bias)
+
+    # Add to Station
+    try:
+        station.remove_component('V_bias')
+    except KeyError:
+        pass
+    station.add_component(V_bias, 'V_bias')
+
+    # Remove any pre-existing parameter
+    if update_monitor:
+        for param in station._monitor_parameters.copy():
+            if param.name == 'V_bias':
+                station._monitor_parameters.remove(param)
+        station._monitor_parameters.insert(0, V_bias)
+
+    return V_bias
