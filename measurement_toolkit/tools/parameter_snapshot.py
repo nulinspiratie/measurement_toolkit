@@ -29,17 +29,26 @@ class ParameterSnapshot:
             else:
                 parameter_info['value'] = parameter.get_latest()
 
-    def __call__(self, verbose=True, pretty=False, comment=True, **kwargs):
+    def __call__(self, *args, **kwargs):
+        default_kwargs = dict(verbose=True, pretty=False, comment=True)
+        kwargs = {**default_kwargs, **kwargs}
+
+        if args:
+            return self.call_with_args(*args, **kwargs)
+
         self.update()
 
-        if verbose:
-            self.print(pretty=pretty, comment=comment)
+        if kwargs['verbose']:
+            self.print(pretty=kwargs['pretty'], comment=kwargs['comment'])
         else:
             return {elem['name']: elem['value'] for elem in self.parameters}
 
+    def call_with_args(self, *args, **kwargs):
+        pass
+
     def print(self, pretty=False, comment=True):
         for parameter_info in self.parameters:
-            name = parameter_info.get('name', parameter_info['parameter'].name)
+            name = parameter_info['name'] or parameter_info['parameter'].name
             unit = parameter_info.get('unit', parameter_info['parameter'].unit)
             formatter = parameter_info.get('formatter', '')
 
@@ -52,17 +61,23 @@ class ParameterSnapshot:
                     parameter_string += f' {parameter_info["unit"]}'
             else:
                 parameter_string = f'{name}({value_str})'
-                if comment and 'comment' in parameter_info:
+                if comment and parameter_info.get('comment'):
                     parameter_string += f'  # {parameter_info["comment"]}'
 
             print(parameter_string)
 
-    def add_parameter(self, parameter, name=None, comment=''):
-        if parameter in self.parameters:
-            warnings.warn(f'Parameter {parameter} already added to gate_voltages')
-        else:
-            self.parameters.append({
-                'parameter': parameter,
-                'name': name,
-                'comment': comment
-            })
+    def add_parameter(self, parameter, name=None, comment='', overwrite=True, **kwargs):
+        if overwrite:
+            name = name or parameter.name
+            try:
+                parameter = next(param_info for param_info in self.parameters if param_info['name'] == name)
+                self.parameters.remove(parameter)
+            except Exception:
+                pass
+
+        self.parameters.append({
+            'parameter': parameter,
+            'name': name,
+            'comment': comment,
+            **kwargs
+        })

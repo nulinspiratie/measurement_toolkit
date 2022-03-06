@@ -162,7 +162,7 @@ def configure_qdac(qdac, set_vhigh_ilow=False, inter_delay=30e-3, step=10e-3):
         channel.v.step = step
 
 
-def configure_qdac2(qdac):
+def configure_qdac2(qdac, inter_delay=30e-3, step=10e-3):
     for ch_id, channel in enumerate(qdac.channels, start=1):
         channel.id = ch_id
 
@@ -184,26 +184,45 @@ def configure_qdac2(qdac):
             vals=vals.Numbers(-9.99, 9.99)
         )
 
+        # Set ramping
+        channel.v.inter_delay = inter_delay
+        channel.v.step = step
+
 
 
 ### In progress
+def load_qdac_snapshot_voltages(dataset, qdac_snapshot):
+    voltages = {}
+
+    for key, value in qdac_snapshot['parameters'].items():
+        if not key.startswith('V'):
+            continue
+        elif value['value'] is None or abs(value['value']) < 1e-4:
+            continue
+        elif f'qdac_{key}' in dataset.paramspecs:
+            # Gate is being swept
+            continue
+
+        voltages[key] = value['value']
+    return voltages
+
+def load_qdac2_snapshot_voltages(dataset, qdac_snapshot):
+    return {}
+
 def gate_voltages(dataset=None, silent=False, pretty=False):
     voltages = {}
 
     if dataset is not None:
         if isinstance(dataset, numbers.Integral):
             dataset = load_by_run_spec(captured_run_id=dataset)
-        for key, value in dataset.snapshot['station']['instruments']['qdac']['parameters'].items():
-            if not key.startswith('V'):
-                continue
-            elif value['value'] is None or abs(value['value']) < 1e-4:
-                continue
-            elif f'qdac_{key}' in dataset.paramspecs:
-                # Gate is being swept
-                continue
-
-            voltages[key] = value['value']
-            V_bias = np.NaN
+        for instrument_name, instrument_snapshot in dataset.snapshot['station']['instruments'].items():
+            if instrument_snapshot['__class__'] == 'qcodes.instrument_drivers.QDevil.QDevil_QDAC.QDac':
+                voltages.update(load_qdac_snapshot_voltages(dataset, instrument_snapshot))
+            elif instrument_snapshot['__class__'] == 'qcodes_contrib_drivers.drivers.QDevil.QDAC2.QDac2':
+                # voltages.update(load_qdac2_snapshot_voltages(dataset, instrument_snapshot))
+                voltages.update(load_qdac_snapshot_voltages(dataset, instrument_snapshot))
+                # return instrument_snapshot
+        V_bias = np.NaN
     else:
         station = qc.Station.default
         V_threshold = 1e-4

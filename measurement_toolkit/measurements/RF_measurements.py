@@ -9,6 +9,14 @@ from qcodes.utils.dataset.doNd import do0d
 from qcodes.utils.validators import Numbers, Arrays
 
 
+def get_slew_rate(qdac_channel):
+    if qdac_channel.v.step is None:
+        return None
+    elif qdac_channel.v.inter_delay == 0:
+        return None
+    else:
+        return qdac_channel.v.step / qdac_channel.v.inter_delay
+
 class QDacSweeper():
     def __init__(self, name, qdac_channel):
         self.name = name
@@ -55,6 +63,84 @@ class QDacSweeper():
             self.qdac_channel.sync(0)
             self.qdac_channel.v(V_final)
             self.qdac_channel.sync(1)
+
+
+class QDac2Sweeper():
+    def __init__(self, name, qdac_channel, trigger_channel, scale=1):
+        self.name = name
+        self.qdac_channel = qdac_channel
+        self.trigger_channel = trigger_channel
+        self.scale = scale
+        self.qdac = self.qdac_channel.parent
+        self.silent = True
+
+    def setup(self):
+        self.trigger_channel.width_s(.1e-3)
+
+    def ramp(self, V_start, V_stop, duration, trigger=True, num_points=2001, block=True):
+        V_start_scaled = V_start / self.scale
+        V_stop_scaled = V_stop / self.scale
+        sweep = self.qdac_channel.dc_sweep(
+            start_V=V_start_scaled,
+            stop_V=V_stop_scaled,
+            points=num_points,
+            repetitions=1,
+            dwell_s=duration / num_points,
+            stepped=False,
+            backwards=V_start > V_stop
+        )
+        if not self.silent:
+            print(f'Sweeping from {V_start_scaled} V to {V_stop_scaled} V in {duration} s')
+        if trigger:
+            trigger_object = sweep.start_marker()
+            self.trigger_channel.source_from_trigger(trigger_object)
+        else:
+            # triangle = self.qdac_channel.triangle_wave()
+            # trigger_object = triangle.period_start_marker()
+            self.qdac.free_all_triggers()
+            # self.trigger_channel.source_from_trigger(trigger_object)
+            self.trigger_channel.source_from_bus()
+            # self.qdac.free_all_triggers()
+
+        sweep.start()
+
+        if block:
+            while sweep.cycles_remaining():
+                time.sleep(5e-3)
+
+    def sweep(self, V_start, V_stop, duration):
+        slew_rate = get_slew_rate(self.qdac_channel)
+        V0 = self.qdac_channel.v() * self.scale
+
+        # Ramp to V_start
+        if slew_rate is not None:
+            self.ramp(
+                V_start=V0,
+                V_stop=V_start,
+                duration=abs(V_start - V0) / slew_rate,
+                trigger=False
+            )
+
+        # Ramp from V_start to V_stop
+        self.ramp(
+            V_start=V_start,
+            V_stop=V_stop,
+            duration=duration,
+            trigger=True
+        )
+
+        # Ramp to V_stop
+        if slew_rate is not None:
+            self.ramp(
+                V_start=V_stop,
+                V_stop=V0,
+                duration=abs(V0 - V_stop) / slew_rate,
+                trigger=False
+            )
+        else:
+            self.qdac.free_all_triggers()
+            self.trigger_channel.source_from_bus()
+            self.qdac_channel.v(V_stop)
 
 
 class GateScanRF():
@@ -175,14 +261,16 @@ class GateScanRF():
         num_points=None, 
         num_traces=None, 
         duration=None, 
+        delay=0.01
         ):
         if setup:
             self.setup(num_points=num_points, num_traces=num_traces, duration=duration)
 
         self.start_RF_lockin_acquisition()
         t_start = time.perf_counter()
+        time.sleep(delay)
 
-        self.sweeper.ramp()
+        self.sweeper.sweep(V_start=self.V_start, V_stop=self.V_stop, duration=self.duration)
 
         if finalize:
             self.wait_acquisition_complete(timeout=5, t_start=t_start)
@@ -251,7 +339,7 @@ class GateScanRF():
 
         for V in voltages:
             gate(V)
-            self.sweeper.ramp()
+            self.sweeper.sweep(V_start=self.V_start, V_stop=self.V_stop, duration=self.duration)
 
             if not silent:
                 clear_output()
