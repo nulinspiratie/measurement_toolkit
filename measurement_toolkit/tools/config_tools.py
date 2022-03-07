@@ -29,10 +29,10 @@ def initialize_from_config(
     if sample_name is None:
         sample_name = qc.config.user.sample_name
 
-    database = initialise_database()
-
     if not silent:
         print(f'Database: {qc.config.core.db_location}')
+
+    database = initialise_database()
 
     exp = load_or_create_experiment(
         experiment_name=experiment_name,
