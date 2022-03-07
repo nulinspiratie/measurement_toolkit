@@ -77,7 +77,7 @@ def inject_matplotlib_axis_get_colorbar():
             return colorbars[0]
     Axes.get_colorbar = get_colorbar
 
-def perform_injections():
+def perform_code_injections():
     inject_matplotlib_axis_clim()
     inject_matplotlib_figure_title_functions()
     inject_matplotlib_axis_title_functions()

@@ -46,13 +46,15 @@ def configure_lockins(
         ohmics_str = '&'.join([f'{station.ohmics[ohmic].name}:DC{ohmic}' for ohmic in ohmics])
         AC_excitation.label = f"{ohmics_str} AC excitation"
     AC_excitation.update_ohmics = partial(update_ohmics, AC_excitation)
+    # Update value
+    AC_excitation()
 
     # Lockin current and conductance
     current_parameters = []
     conductance_parameters = []
     
     if isinstance(lockins, list):
-        lockins = enumerate(lockins, start=1)
+        lockins = dict(enumerate(lockins, start=1))
         
     for idx, lockin in lockins.items():
         I_lockin = qc.DelegateParameter(
