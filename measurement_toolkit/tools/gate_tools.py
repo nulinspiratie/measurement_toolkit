@@ -31,7 +31,7 @@ def initialize_DC_lines(
     # Populate namespace
     if namespace is not None:
         # Add DC lines to namespace
-        if namespace:
+        for line in lines.values():
             setattr(namespace, line.name, line)
             
         # Add line groups to namespace
@@ -70,13 +70,13 @@ def initialize_DC_lines(
     return DC_line_groups
 
 
-def configure_DC_bias_line(voltage_parameter, voltage_scale=1e3, update_monitor=True):
+def configure_DC_bias_line(voltage_parameter, scale=1e3, update_monitor=True): 
     station = qc.Station.default or qc.Station()
 
     V_bias = qc.DelegateParameter(
         'V_bias',
-        source=station.qdac.ch17.v,
-        scale=voltage_scale,
+        source=voltage_parameter,
+        scale=scale,
         vals=vals.Numbers(-1.1e-3, 1.1e-3),
         unit='V'
     )

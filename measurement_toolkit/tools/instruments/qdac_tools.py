@@ -150,8 +150,8 @@ def configure_qdac(qdac, set_vhigh_ilow=False, inter_delay=30e-3, step=10e-3):
         mode = channel.mode()
         if not mode == QDac_mode.vhigh_ilow:
             print(
-                f'QDac channel {k+1:02} not set to high voltage / low current mode. '
-                f'When at 0V, run: qdac.ch{k+1:02}.mode(QDac_mode.vhigh_ilow)'\
+                f'QDac channel {ch_id:02} not set to high voltage / low current mode. '
+                f'When at 0V, run: qdac.ch{ch_id:02}.mode(QDac_mode.vhigh_ilow)'\
             )
         # Set all gate voltages to high voltage / low current
         if set_vhigh_ilow:

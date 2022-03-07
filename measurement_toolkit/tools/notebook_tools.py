@@ -113,7 +113,7 @@ def execute_file(filepath: (str, Path), mode=None, globals=None, locals=None):
 
 def run_script(
         script_name: str,
-        folder: Union[Path, str] = 'scripts',
+        folder: Union[Path, str] = ''  ,
         silent: bool = False,
         mode: str = None,
         globals: dict = None,
