@@ -209,8 +209,8 @@ def test_database():
             Database file name with absolute path, for example
             ``C:\\mydata\\majorana_experiments.db``
     """
-    assert 'test_db_location' in qcodes.config.core
-    test_location = qcodes.config.core.test_db_location
+    assert 'test_db_location' in qcodes.config.dataset
+    test_location = qcodes.config.dataset.test_db_location
 
     try:
         db_location = qcodes.config["core"]["db_location"]
