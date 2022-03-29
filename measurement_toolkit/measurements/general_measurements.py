@@ -4,7 +4,7 @@ import warnings
 
 import qcodes as qc
 from qcodes import Measurement
-from qcodes.utils.dataset.doNd import LinSweep, dond
+from qcodes.utils.dataset.doNd import LinSweep, dond, do0d
 from qcodes.instrument.parameter import _BaseParameter
 
 
@@ -60,10 +60,11 @@ def measure_repeatedly(
         loop_index = 1
         while time_parameter() < duration:
             t0 = time.perf_counter()
+            t = time_parameter()
 
             for param in measure_params:
                 datasaver.add_result(
-                    (time_parameter, time_parameter()),
+                    (time_parameter, t),
                     (param, param())
                 )
             t1 = time.perf_counter()
@@ -85,3 +86,16 @@ def measure_repeatedly(
         'average_duration': np.mean(measurement_durations),
         'average_interval': np.mean(measurement_intervals)
     }
+
+def dict_to_dataset(data_dict, measurement_name='0d_dict_to_dataset'):
+    measure_params = []
+    for key, val in data_dict.items():
+        assert isinstance(val, (list, tuple, np.ndarray))
+        # Create a parameter
+        val_array = np.array(val)
+        param = qc.ArrayParameter(key, shape=val_array.shape, get_cmd=lambda: val_array)
+        measure_params.append(param)
+
+    do0d(
+        measurement_name=measurement_name
+    )

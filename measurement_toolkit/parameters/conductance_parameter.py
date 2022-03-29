@@ -103,7 +103,7 @@ class ConductanceParameter(qc.ManualParameter):
             R_total = V_lockin / I_sd
         else:
             R_total = np.nan
-        R_device = R_total - R_line
+        R_device = R_total - R_line 
 
         V_device = I_sd * R_device
         G_device = 1/R_device / self.G0

@@ -1,4 +1,4 @@
-
+import numpy as np
 from functools import partial
 
 import qcodes as qc
@@ -32,7 +32,24 @@ def configure_lockins(
     station = qc.Station.default
     assert station is not None
     
-    # AC excitation
+    # Add Xnoise and Ynoise parameters
+    def get_lockin_noise(lockin, quadrature='R'):
+        assert quadrature in 'XYR'
+
+        Xnoise, Ynoise = lockin.get_values('Xnoise', 'Ynoise')
+        if quadrature == 'X':
+            return Xnoise
+        elif quadrature == 'Y':
+            return Ynoise
+        else: ## quadrature == 'R'
+            return np.sqrt(Xnoise**2 + Ynoise**2)
+
+    for lockin in lockins:
+        lockin.add_parameter('Xnoise', unit='V', get_cmd=partial(get_lockin_noise, lockin, 'X'))
+        lockin.add_parameter('Ynoise', unit='V', get_cmd=partial(get_lockin_noise, lockin, 'Y'))
+        lockin.add_parameter('Rnoise', unit='V', get_cmd=partial(get_lockin_noise, lockin, 'R'))
+
+    # AC excitation parameter
     AC_excitation = qc.DelegateParameter(
         'AC_excitation',
         source=source_lockin.amplitude,
@@ -56,6 +73,7 @@ def configure_lockins(
     if isinstance(lockins, list):
         lockins = dict(enumerate(lockins, start=1))
         
+    # Create current and conductance parameters
     for idx, lockin in lockins.items():
         I_lockin = qc.DelegateParameter(
             f'I_lockin{idx}',
