@@ -52,6 +52,10 @@ class ParameterSnapshot:
             unit = parameter_info.get('unit', parameter_info['parameter'].unit)
             formatter = parameter_info.get('formatter', '')
 
+            if parameter_info['value_lower_bound'] is not None:
+                if abs(parameter_info['value']) < parameter_info['value_lower_bound']:
+                    continue
+
             # Must be a better way to do this
             value_str = ('{:'+formatter+'}').format(parameter_info['value'])
 
@@ -66,7 +70,7 @@ class ParameterSnapshot:
 
             print(parameter_string)
 
-    def add_parameter(self, parameter, name=None, comment='', overwrite=True, **kwargs):
+    def add_parameter(self, parameter, name=None, comment='', overwrite=True, value_lower_bound=None, **kwargs):
         if overwrite:
             name = name or parameter.name
             try:
@@ -79,5 +83,6 @@ class ParameterSnapshot:
             'parameter': parameter,
             'name': name,
             'comment': comment,
+            'value_lower_bound': value_lower_bound
             **kwargs
         })
