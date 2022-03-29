@@ -83,6 +83,6 @@ class ParameterSnapshot:
             'parameter': parameter,
             'name': name,
             'comment': comment,
-            'value_lower_bound': value_lower_bound
+            'value_lower_bound': value_lower_bound,
             **kwargs
         })

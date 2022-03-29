@@ -63,9 +63,9 @@ def configure_lockins(
             return np.sqrt(Xnoise**2 + Ynoise**2)
 
     for lockin in lockins:
-        lockin.add_parameter('Xnoise', unit='V', get_cmd=partial(get_lockin_noise, lockin, 'X'))
-        lockin.add_parameter('Ynoise', unit='V', get_cmd=partial(get_lockin_noise, lockin, 'Y'))
-        lockin.add_parameter('Rnoise', unit='V', get_cmd=partial(get_lockin_noise, lockin, 'R'))
+        for axis in 'XYR':
+            lockin.parameters.pop(f'{axis}noise')
+            lockin.add_parameter(f'{axis}noise', unit='V', get_cmd=partial(get_lockin_noise, lockin, axis))
 
     # AC excitation parameter
     AC_excitation = qc.DelegateParameter(
