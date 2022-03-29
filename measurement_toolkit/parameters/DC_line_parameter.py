@@ -56,7 +56,7 @@ def sweep_gate_to(
 
     if delay is None:
         if hasattr(station, 't_lockin'):
-            delay = 2 * station.t_lockin()
+            delay = station.t_lockin.delay
         else:
             print('station.t_lockin not defined, using delay 200 ms')
             delay = 0.2

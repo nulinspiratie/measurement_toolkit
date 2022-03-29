@@ -17,7 +17,7 @@ def bias_scan(V_range=600e-6, num=251, show_progress=True, sweep=None, delay=Non
         measure_params = station.measure_params
 
     if delay is None:
-        delay = 2 * station.t_lockin()
+        delay = station.t_lockin.delay
 
     if sweep is None:
         sweeps = []
@@ -54,7 +54,7 @@ def tune_to_peak(gate, measure_param, voltage_center=None, voltage_window=10e-3,
 
     if delay is True:
         assert hasattr(station, 't_lockin'), "Station must have function t_lockin"
-        delay = 2 * station.t_lockin()
+        delay = station.t_lockin.delay
     elif delay in [False, None]:
         delay = 0
 

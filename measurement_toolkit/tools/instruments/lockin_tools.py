@@ -5,21 +5,39 @@ import qcodes as qc
 from qcodes import Parameter
 from qcodes.utils import validators as vals
 from measurement_toolkit.parameters import ConductanceParameter
+from measurement_toolkit.tools.general_tools import property_ignore_setter
 
 
 class LockinTimeParameter(Parameter):
     def __init__(self, lockins, name='t_lockin', unit='s', **kwargs):
         super().__init__(name=name, unit=unit, **kwargs)
         self.lockins = lockins
+        self._delay = None
+        self.delay_scale = 1
 
     def get_raw(self):
         time_constants = [lockin.time_constant() for lockin in self.lockins]
-        assert len(set(time_constants)) == 1
+        assert len(set(time_constants)) == 1, f"Lockin time constants not equal: {time_constants}"
         return time_constants[0]
 
     def set_raw(self, time_constant):
         for lockin in self.lockins:
             lockin.time_constant(time_constant)
+
+        if self._delay is not None:
+            self._delay = None
+            print(f'Resetting lockin delay to {self.delay_scale*time_constant} s ({self.delay_scale}*t_lockin)')
+
+    @property
+    def delay(self):
+        if self._delay is not None:
+            return self._delay
+        else:
+            return self() * self.delay_scale
+
+    @delay.setter
+    def delay(self, delay):
+        self._delay = delay
 
 
 def configure_lockins(
