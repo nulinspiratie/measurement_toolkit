@@ -6,7 +6,7 @@ import qcodes as qc
 from qcodes import Measurement
 from qcodes.utils.dataset.doNd import LinSweep, dond, do0d
 from qcodes.instrument.parameter import _BaseParameter
-
+from measurement_toolkit.tools.plot_tools import plot_data
 
 class TimeParameter(qc.Parameter):
     def __init__(self, name='time', unit='s', **kwargs):
@@ -33,6 +33,7 @@ def measure_repeatedly(
     duration,
     measure_params=None,
     t_delta=None,
+    plot=False
 ):
     station = qc.Station.default
     assert station is not None, "No station initialized"
@@ -80,6 +81,9 @@ def measure_repeatedly(
 
             measurement_intervals.append(time.perf_counter() - t0)
             loop_index += 1
+
+    if plot:
+        plot_data(datasaver._dataset)
 
     return {
         'dataset': datasaver._dataset,
