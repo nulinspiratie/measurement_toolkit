@@ -5,6 +5,7 @@ import qcodes as qc
 from qcodes.utils import validators as vals
 
 from measurement_toolkit.parameters.DC_line_parameter import DCLine
+from measurement_toolkit.measurements.DC_measurements import bias_scan
 
 
 def initialize_DC_lines(
@@ -93,6 +94,8 @@ def configure_DC_bias_line(voltage_parameter, scale=1e3, update_monitor=True):
     except KeyError:
         pass
     station.add_component(V_bias, 'V_bias')
+
+    V_bias.sweep = partial(bias_scan, V_bias=V_bias)
 
     # Remove any pre-existing parameter
     if update_monitor:

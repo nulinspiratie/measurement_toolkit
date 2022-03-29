@@ -19,6 +19,8 @@ class ConductanceParameter(qc.ManualParameter):
         self.ohmics = ohmics
         self.I_lockin_parameter = I_lockin_parameter
 
+        self._label = None
+
         super().__init__(
             name=name,
             unit='$e^2/h$',
@@ -38,13 +40,16 @@ class ConductanceParameter(qc.ManualParameter):
 
     @property_ignore_setter
     def label(self):
-        source_ohmics_str = '&'.join([
-            f'DC{ohmic}' for ohmic in self.source_parameter.ohmics
-        ])
-        drain_ohmics_str = '&'.join([
-            f'DC{ohmic}' for ohmic in self.ohmics
-        ])
-        return f'Conductance {source_ohmics_str} → {drain_ohmics_str}'
+        if self._label is not None:
+            return self._label
+        else:
+            source_ohmics_str = '&'.join([
+                f'DC{ohmic}' for ohmic in self.source_parameter.ohmics
+            ])
+            drain_ohmics_str = '&'.join([
+                f'DC{ohmic}' for ohmic in self.ohmics
+            ])
+            return f'Conductance {source_ohmics_str} → {drain_ohmics_str}'
 
     @property
     def source_conductance(self):

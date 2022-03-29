@@ -7,10 +7,11 @@ from qcodes.utils.dataset.doNd import do1d, do2d, dond, plot, LinSweep, LogSweep
 
 __all__ = ['bias_scan', 'tune_to_peak']
 
-def bias_scan(V_range=600e-6, num=251, show_progress=True, sweep=None, delay=None, plot=True, measure_params=None):
+def bias_scan(V_range=600e-6, num=251, show_progress=True, sweep=None, delay=None, plot=True, measure_params=None, V_bias=None):
     station = qc.Station.default
-    assert hasattr(station, 'V_bias'), 'Station.V_bias must be registered'
-    V_bias = station.V_bias
+    if V_bias is None:
+        assert hasattr(station, 'V_bias'), 'Station.V_bias must be registered'
+        V_bias = station.V_bias
 
     if measure_params is None:
         measure_params = station.measure_params
