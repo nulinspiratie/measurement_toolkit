@@ -9,7 +9,11 @@ from qcodes import config
 
 properties_config = config.get('properties', {})
 pulse_config = config.get('pulses', {})
-__all__ = ['CombinedParameter', 'AttributeParameter']
+__all__ = [
+    'CombinedParameter', 
+    'AttributeParameter',
+    'RepetitionParameter'
+]
 
 
 class CombinedParameter(Parameter):
@@ -188,3 +192,32 @@ class AttributeParameter(Parameter):
         else:
             value = self.object[self.attribute]
         return value
+
+
+class RepetitionParameter(Parameter):
+    def __init__(
+        self, 
+        target_parameter, 
+        repetitions=1, 
+        delay=0,
+        **kwargs
+        ):
+        for key in ['name', 'label', 'unit']:
+            kwargs.setdefault(key, getattr(target_parameter, key))
+        super().__init__(**kwargs)
+
+        self.target_parameter = target_parameter
+        self.repetitions = repetitions
+        self.delay = delay
+
+    def get_raw(self):
+        self.values = []
+        for k in range(self.repetitions):
+            self.values.append(self.target_parameter())
+            sleep(self.delay)
+
+        self.mean_value = np.mean(self.values)
+        self.std_value = np.std(self.values)
+
+        return self.mean_value
+        

@@ -3,6 +3,8 @@ from qcodes import (
 )
 from qcodes.utils.dataset.doNd import do1d, do2d, dond, plot, LinSweep, LogSweep
 
+from measurement_toolkit.parameters.general_parameters import RepetitionParameter
+
 import matplotlib.ticker as ticker
 from matplotlib import pyplot as plt
 
@@ -14,6 +16,7 @@ def measure_noise_spectrum(
         f_min=1,
         f_max=500,
         df=1,
+        repetitions=1,
         show_progress=True,
         plot=True
 ):
@@ -37,11 +40,16 @@ def measure_noise_spectrum(
         # 'mask_params': {param.name: val for param, val in mask_params.items()}
     }
 
+    measure_param = RepetitionParameter(
+        target_parameter=measure_lockin.R,
+        repetitions=repetitions
+    )
+
     try:
         for param, val in mask_params.items():
             param(val)
 
-        dataset, _, _ = dond(frequency_sweep, measure_lockin.R, show_progress=show_progress)
+        dataset, _, _ = dond(frequency_sweep, measure_param, show_progress=show_progress)
         # dataset.add_metadata('measurement_info', metadata)
         # dataset.save_metadata()
     finally:
