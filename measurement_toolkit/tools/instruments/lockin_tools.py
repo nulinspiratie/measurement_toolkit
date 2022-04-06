@@ -64,7 +64,7 @@ def configure_lockins(
 
     for lockin in lockins:
         for axis in 'XYR':
-            lockin.parameters.pop(f'{axis}noise')
+            lockin.parameters.pop(f'{axis}noise', None)
             lockin.add_parameter(f'{axis}noise', unit='V', get_cmd=partial(get_lockin_noise, lockin, axis))
 
     # AC excitation parameter
