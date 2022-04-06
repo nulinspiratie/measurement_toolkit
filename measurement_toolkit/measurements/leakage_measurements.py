@@ -1,6 +1,8 @@
 from time import sleep
 import sys
 import numpy as np
+from qcodes.dataset.measurement_loop import MeasurementLoop, Sweep
+from qcodes.utils.dataset.doNd import ArraySweep
 
 """
 Example:
@@ -8,7 +10,6 @@ Example:
 for gate in iterate_gates(gates, sort=True):
 	measure_gate_leakage(gate, voltages=voltages, current_limit=1e-9)
 """
-
 
 def iterate_gates(gates, sort=True, silent=False):
 	assert all(gate.DC_line is not None for gate in gates.values())
@@ -34,13 +35,14 @@ def iterate_gates(gates, sort=True, silent=False):
 			sys.stdout.flush()
 			input()
 
-		yield gate
+			yield gate
 	print('Finished measuring all gates')
 
 
-def measure_leakage(measure_current, current_limit, num_attempts, message=None, delay=0, wait_for_input=False, verbose=False):
+def measure_leakage(measure_current_function, current_limit, num_attempts, message=None, delay=0, wait_for_input=False, verbose=False):
+	"""Measure if a gate is leaking current"""
 	for k in range(num_attempts):
-		current = measure_current()  # TODO
+		current = measure_current_function()  # TODO
 
 		if verbose:
 			print(f'Measured current: {current*1e9:.2f} nA')
@@ -53,7 +55,7 @@ def measure_leakage(measure_current, current_limit, num_attempts, message=None, 
 		else:
 			if message is not None:
 				print(f"Current {current*1e9:.1f} nA above limit {current_limit*1e9:.1f} nA. "
-				      + message + f" Trying {num_attempts - k-1} more time")
+				      + message + f" Trying {num_attempts - k-1} more time(s)")
 			if wait_for_input:
 				sys.stdout.flush()
 				input()
@@ -66,15 +68,22 @@ def measure_leakage(measure_current, current_limit, num_attempts, message=None, 
 		}
 
 
-def measure_gate_leakage(gate, voltages, current_limit, measure_current, verbose=False):
+def measure_gate_leakage(gate, voltages, current_limit, measure_current_function=None, verbose=False, delay=0.05):
+	"""
+	Sweep a gate and check if it starts leaking.
+	Ramps back at the end.
+	"""
+	if measure_current_function is None:
+		measure_current_function = gate.i
+
 	original_voltage = gate()
 	voltage_start, *sweep_voltages = voltages
 
 	# Measure if the start voltage is already leaking
 	gate(voltage_start)
-	sleep(0.03)
+	sleep(delay)
 	results = measure_leakage(
-		measure_current=measure_current,
+		measure_current_function=measure_current_function,
 		current_limit=current_limit, 
 		num_attempts=2,
 		message="Are you sure you're ungrounded?",
@@ -87,28 +96,33 @@ def measure_gate_leakage(gate, voltages, current_limit, measure_current, verbose
 
 	# Sweep voltages and check for leakage
 	currents = []
-	for k, V in enumerate(sweep_voltages):
-		if verbose:
-			print(f'Setting gate {gate} to {V:.4g} V')
-		gate(V)
+	with MeasurementLoop(f'gate_leakage_{gate.name}') as msmt:
+		for V in Sweep(ArraySweep(gate, sweep_voltages)):
+			if verbose:
+				print(f'Gate {gate} set to {V:.4g} V')
 
-		results = measure_leakage(
-			measure_current=measure_current,
-			current_limit=current_limit, 
-			num_attempts=3,
-			message="",
-			wait_for_input=False,
-			delay=0.2,
-			verbose=verbose
-		)
-		currents.append(results['current'])
+			sleep(delay)
 
-		if results['leakage']:
-			print(f'Gate {gate} is leaking at {V:.4f} V. Stopping.')
-			leakage = True
-			break
-	else:
-		leakage = False
+			# Measure leakage current at this voltage
+			results = measure_leakage(
+				measure_current_function=measure_current_function,
+				current_limit=current_limit, 
+				num_attempts=3,
+				message="",
+				wait_for_input=False,
+				delay=0.2,
+				verbose=verbose
+			)
+			msmt.measure(results['current'], 'leakage_current', unit='A')
+			currents.append(results['current'])
+
+			if results['leakage']:
+				print(f'Gate {gate} is leaking at {V:.4f} V. Stopping.')
+				msmt.step_out()
+				leakage = msmt.measure(True, 'leakage')
+				break
+		else:
+			leakage = msmt.measure(False, 'leakage')
 
 	# Ensure voltages and currents are the same size
 	voltages = voltages[:len(currents)]
