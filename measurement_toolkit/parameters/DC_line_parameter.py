@@ -39,7 +39,7 @@ def sweep_gate_to(
         gate,
         target_voltage,
         initial_voltage=None,
-        step=10e-3,
+        step=None,
         num=None,
         delay=None,
         sweep=None,
@@ -69,7 +69,13 @@ def sweep_gate_to(
         sleep(delay)
 
     if num is None:
-        num = int(np.ceil(abs((target_voltage - initial_voltage) / step))) + 1
+        if step is not None:
+            num = int(np.ceil(abs((target_voltage - initial_voltage) / step))) + 1
+        else:
+            # Choose minimum of 101 steps, more if each step would be more than 10 mV
+            step = 10e-3
+            step_num = int(np.ceil(abs((target_voltage - initial_voltage) / step))) + 1
+            num = max(step_num, 101)
 
     if sweep is None:
         sweeps = [LinSweep(gate, initial_voltage, target_voltage, num, delay)]
@@ -231,7 +237,7 @@ class DCLine(Parameter):
             self,
             target_voltage,
             initial_voltage=None,
-            step=10e-3,
+            step=None,
             num=None,
             delay=None,
             sweep=None,
@@ -253,6 +259,42 @@ class DCLine(Parameter):
             plot=plot,
             **kwargs
         )
+
+    def sweep_around(
+            self,
+            dV,
+            step=None,
+            num=None,
+            delay=None,
+            sweep=None,
+            measure=True,
+            show_progress=True,
+            plot=True,
+            **kwargs
+    ):
+        # Record initial voltage, also to reset later on
+        V0 = self()
+        
+        try:
+            result = sweep_gate_to(
+                gate=self,
+                target_voltage=V0 + dV,
+                initial_voltage=V0 - dV,
+            step=step,
+            num=num,
+            delay=delay,
+            sweep=sweep,
+            measure=measure,
+            show_progress=show_progress,
+            plot=plot,
+            **kwargs
+            )
+        finally:
+            # Reset voltage to original
+            self(V0)
+
+        return result
+
 
     def ramp_voltage(self, target_voltage, current_limit=None, delay=100e-3, step=10e-3, silent=True):
         if current_limit is None:
