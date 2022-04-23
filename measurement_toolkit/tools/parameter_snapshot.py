@@ -1,5 +1,3 @@
-import warnings
-from typing import Union
 from qcodes.instrument.parameter import _BaseParameter
 
 
@@ -13,13 +11,23 @@ class ParameterSnapshot:
     - name (optional): Name of parameter. Overrides parameter.name
     - unit (optional): Unit of parameter. Overrides parameter.unit
     """
-    def __init__(self, parameters: dict = {}):
+    def __init__(
+        self, 
+        name='', 
+        parameters: dict = {},
+        parameter_snapshots: dict = {},
+    ):
+        self.name = name
+
         self.parameters = {}
-        for parameter_name, parameter in parameters.values():
+        self.nested_snapshots = parameter_snapshots
+
+        for name, parameter in parameters.values():
             if isinstance(parameter, dict):
-                self.add_parameter(**parameter)
+                self.add_parameter(**parameter, name=name)
             elif isinstance(parameter, _BaseParameter):
-                self.add_parameter(parameter)
+                self.add_parameter(parameter, name=name)
+        
 
     def update(self):
         for parameter_info in self.parameters.values():
@@ -42,12 +50,23 @@ class ParameterSnapshot:
         if kwargs['verbose']:
             self.print(pretty=kwargs['pretty'], comment=kwargs['comment'])
         else:
-            return {name: elem['value'] for name, elem in self.parameters.items()}
+            parameter_values = {}
+            for parameter_snapshot in self.nested_snapshots.values():
+                parameter_values.update(**parameter_snapshot(verbose=False))
+            for name, parameter in self.parameters.items():
+                parameter_values[name] == parameter['value']
+
+            return parameter_values
 
     def call_with_args(self, *args, **kwargs):
         pass
 
     def print(self, pretty=False, comment=True):
+        # Print nested parameter snapshots
+        for parameter_snapshot in self.nested_snapshots.values():
+            parameter_snapshot.print()
+
+        # Print parameters
         for name, parameter_info in self.parameters.items():
             unit = parameter_info.get('unit', parameter_info['parameter'].unit)
             formatter = parameter_info.get('formatter', '')
