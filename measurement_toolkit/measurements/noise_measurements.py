@@ -82,6 +82,7 @@ def plot_noise_spectrum(dataset, ax=None, label=None):
     ax.yaxis.set_major_formatter(ticks)
 
     ax.grid('on')
+    ax.set_yscale('log')
     return fig, ax
 
 
