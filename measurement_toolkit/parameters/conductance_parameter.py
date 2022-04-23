@@ -101,12 +101,15 @@ class ConductanceParameter(qc.ManualParameter):
         I_sd = self.I_lockin_parameter()
         if I_sd != 0:
             R_total = V_lockin / I_sd
-        else:
-            R_total = np.nan
-        R_device = R_total - R_line 
+            R_device = R_total - R_line 
 
-        V_device = I_sd * R_device
-        G_device = 1/R_device / self.G0
+            V_device = I_sd * R_device
+            G_device = 1/R_device / self.G0
+        else:
+            R_total = np.inf
+            R_device = np.inf
+            V_device = V_lockin
+            G_device = 0
 
         self.values = {
             'I_sd': I_sd,

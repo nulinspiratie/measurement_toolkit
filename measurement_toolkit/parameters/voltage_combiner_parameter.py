@@ -41,7 +41,7 @@ class VoltageCombinerParameter(Parameter):
             self,
             target_voltage,
             initial_voltage=None,
-            step=10e-3,
+            step=None,
             num=None,
             delay=None,
             sweep=None,
