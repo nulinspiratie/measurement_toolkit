@@ -33,7 +33,7 @@ def measure_repeatedly(
     duration,
     measure_params=None,
     t_delta=None,
-    plot=False
+    plot=True
 ):
     station = qc.Station.default
     assert station is not None, "No station initialized"
