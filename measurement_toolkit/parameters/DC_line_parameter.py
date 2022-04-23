@@ -7,7 +7,7 @@ from time import sleep
 
 import qcodes as qc
 from qcodes import Parameter
-from qcodes.utils.dataset.doNd import LinSweep, dond
+from qcodes.utils.dataset.doNd import LinSweep, dond, AbstractSweep
 from qcodes.dataset.plotting import plot_dataset
 
 this = sys.modules[__name__]  # Allows setting of variables via 'setattr(this, name, value)'
@@ -79,7 +79,7 @@ def sweep_gate_to(
 
     if sweep is None:
         sweeps = [LinSweep(gate, initial_voltage, target_voltage, num, delay)]
-    elif isinstance(sweep, LinSweep):
+    elif isinstance(sweep, AbstractSweep):
         sweeps = [sweep, LinSweep(gate, initial_voltage, target_voltage, num, delay)]
     else:
         sweeps = [*sweep, LinSweep(gate, initial_voltage, target_voltage, num, delay)]
