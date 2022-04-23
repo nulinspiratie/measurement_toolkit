@@ -1,4 +1,5 @@
 import warnings
+from typing import Union
 from qcodes.instrument.parameter import _BaseParameter
 
 
@@ -12,16 +13,16 @@ class ParameterSnapshot:
     - name (optional): Name of parameter. Overrides parameter.name
     - unit (optional): Unit of parameter. Overrides parameter.unit
     """
-    def __init__(self, parameters=()):
-        self.parameters = []
-        for parameter in parameters:
+    def __init__(self, parameters: dict = {}):
+        self.parameters = {}
+        for parameter_name, parameter in parameters.values():
             if isinstance(parameter, dict):
                 self.add_parameter(**parameter)
             elif isinstance(parameter, _BaseParameter):
                 self.add_parameter(parameter)
 
     def update(self):
-        for parameter_info in self.parameters:
+        for parameter_info in self.parameters.values():
             parameter = parameter_info['parameter']
 
             if parameter_info.get('snapshot_get', True):
@@ -41,14 +42,13 @@ class ParameterSnapshot:
         if kwargs['verbose']:
             self.print(pretty=kwargs['pretty'], comment=kwargs['comment'])
         else:
-            return {elem['name']: elem['value'] for elem in self.parameters}
+            return {name: elem['value'] for name, elem in self.parameters.items()}
 
     def call_with_args(self, *args, **kwargs):
         pass
 
     def print(self, pretty=False, comment=True):
-        for parameter_info in self.parameters:
-            name = parameter_info['name'] or parameter_info['parameter'].name
+        for name, parameter_info in self.parameters.items():
             unit = parameter_info.get('unit', parameter_info['parameter'].unit)
             formatter = parameter_info.get('formatter', '')
 
@@ -71,18 +71,15 @@ class ParameterSnapshot:
             print(parameter_string)
 
     def add_parameter(self, parameter, name=None, comment='', overwrite=True, value_lower_bound=None, **kwargs):
-        if overwrite:
-            name = name or parameter.name
-            try:
-                parameter = next(param_info for param_info in self.parameters if param_info['name'] == name)
-                self.parameters.remove(parameter)
-            except Exception:
-                pass
+        if name is None:
+            name = parameter.name
 
-        self.parameters.append({
+        if name in self.parameters and not overwrite:
+            raise SyntaxError(f'Parameter {name} already registered in snapshot')
+
+        self.parameters[name] = {
             'parameter': parameter,
-            'name': name,
             'comment': comment,
             'value_lower_bound': value_lower_bound,
             **kwargs
-        })
+        }
