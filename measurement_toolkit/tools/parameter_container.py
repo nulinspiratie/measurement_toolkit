@@ -1,7 +1,10 @@
+from typing import Optional, Sequence, Dict, Any
+
 from qcodes.instrument.parameter import _BaseParameter
+from qcodes.utils.metadata import Metadatable
 
 
-class ParameterSnapshot:
+class ParameterContainer(Metadatable):
     """Collection of parameters
 
     Allowed optional parameter dict keys:
@@ -15,19 +18,21 @@ class ParameterSnapshot:
         self, 
         name='', 
         parameters: dict = {},
-        parameter_snapshots: dict = {},
+        parameter_containers: dict = {},
     ):
         self.name = name
 
         self.parameters = {}
-        self.nested_snapshots = parameter_snapshots
+        self.nested_containers = parameter_containers
 
         for name, parameter in parameters.values():
             if isinstance(parameter, dict):
                 self.add_parameter(**parameter, name=name)
             elif isinstance(parameter, _BaseParameter):
                 self.add_parameter(parameter, name=name)
-        
+
+    def snapshot_base(self, update: Optional[bool] = False, params_to_skip_update: Optional[Sequence[str]] = None) -> Dict[Any, Any]:
+        return self(verbose=False)
 
     def update(self):
         for parameter_info in self.parameters.values():
@@ -50,20 +55,23 @@ class ParameterSnapshot:
         if kwargs['verbose']:
             self.print(pretty=kwargs['pretty'], comment=kwargs['comment'])
         else:
-            parameter_values = {}
-            for parameter_snapshot in self.nested_snapshots.values():
-                parameter_values.update(**parameter_snapshot(verbose=False))
-            for name, parameter in self.parameters.items():
-                parameter_values[name] == parameter['value']
-
-            return parameter_values
+            return self.get_parameter_values()
 
     def call_with_args(self, *args, **kwargs):
         pass
 
+    def get_parameter_values(self):
+        parameter_values = {}
+        for parameter_snapshot in self.nested_containers.values():
+            parameter_values.update(**parameter_snapshot(verbose=False))
+        for name, parameter in self.parameters.items():
+            parameter_values[name] == parameter['value']
+
+        return parameter_values
+
     def print(self, pretty=False, comment=True):
         # Print nested parameter snapshots
-        for parameter_snapshot in self.nested_snapshots.values():
+        for parameter_snapshot in self.nested_containers.values():
             parameter_snapshot.print()
 
         # Print parameters
