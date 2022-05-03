@@ -3,6 +3,7 @@ import warnings
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.collections import QuadMesh
+from matplotlib.colors import LogNorm
 
 
 def inject_matplotlib_axis_clim():
@@ -18,6 +19,15 @@ def inject_matplotlib_axis_clim():
 
     Axes.set_clim = attach_set_clim
     Axes.get_clim = attach_get_clim
+
+
+def inject_matplotlib_axis_logscale():
+    def attach_set_logscale(ax, vmin, vmax):
+        for child in ax.get_children():
+            if isinstance(child, QuadMesh):
+                child.set_norm(LogNorm(vmin, vmax))
+
+    Axes.set_logscale = attach_set_logscale
 
 
 def inject_matplotlib_figure_title_functions():
@@ -77,8 +87,10 @@ def inject_matplotlib_axis_get_colorbar():
             return colorbars[0]
     Axes.get_colorbar = get_colorbar
 
+
 def perform_code_injections():
     inject_matplotlib_axis_clim()
+    inject_matplotlib_axis_logscale()
     inject_matplotlib_figure_title_functions()
     inject_matplotlib_axis_title_functions()
     inject_matplotlib_axis_color_left_right()
