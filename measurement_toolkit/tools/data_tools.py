@@ -12,6 +12,7 @@ __all__ = [
     'convert_to_dataset',
     'get_latest_run_id',
     'smooth',
+    'retrieve_station_component',
     'magnetic_fields',
     'modify_measurement_note',
     'test_database'
@@ -151,6 +152,21 @@ def magnetic_fields(dataset=None, silent=False):
     return magnetic_fields
 
 
+def retrieve_station_component(dataset, component_name, return_dict=False, **kwargs):
+    if isinstance(dataset, int):
+        dataset = load_data(dataset, 'qcodes')
+
+    if dataset is not None:
+        from measurement_toolkit.tools.parameter_container import print_parameters_from_container
+        snapshot = dataset.snapshot['station']['components'][component_name]
+        if return_dict:
+            return {name: info.get('value') for name, info in snapshot.items()}
+        else:
+            print_parameters_from_container(snapshot, **kwargs)
+    else:
+        raise ValueError(f'Could not extract snapshot from dataset {dataset}')
+
+
 def dataset_information(dataset, silent=True):
     if isinstance(dataset, int):
         dataset = load_data(dataset, 'qcodes')
@@ -169,7 +185,6 @@ def dataset_information(dataset, silent=True):
     except Exception:
         print('Could not extract gate voltages')
     return results
-
 
 
 def modify_measurement_note(run_id=None):
