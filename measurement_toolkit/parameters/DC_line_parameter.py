@@ -1,14 +1,18 @@
+import warnings
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 import sys
-from pathlib import Path
 from time import sleep
+from typing import Tuple, Union
 
 import qcodes as qc
 from qcodes import Parameter
 from qcodes.utils.dataset.doNd import LinSweep, dond, AbstractSweep
 from qcodes.dataset.plotting import plot_dataset
+from qcodes.station import Station
+from qcodes.utils import validators as vals
+
 
 this = sys.modules[__name__]  # Allows setting of variables via 'setattr(this, name, value)'
 
@@ -107,7 +111,7 @@ class DCLine(Parameter):
         self,
         name: str,
         line_type: str,
-        DC_line: int,
+        DC_line: Union[int, Tuple[int]],
         AC_line: int,
         RF_line: int,
         DAC_channel: int,
@@ -115,6 +119,8 @@ class DCLine(Parameter):
         breakout_idx: int,
         V_min: float,
         V_max: float,
+        lockin_out: int = None,
+        lockin_in: int = None,
         voltage_scale: float = None,
         side: str = None,
         additional_DC_lines: str = None,
@@ -129,10 +135,18 @@ class DCLine(Parameter):
 
         self.line_type = line_type
         self.side = side
-        self.DC_line = None if pd.isna(DC_line) else int(DC_line)
-        self.DC_lines = [self.DC_line] if self.DC_line else []
+
+        if isinstance(DC_line, int):
+            self.DC_lines = [int(DC_line)]
+        elif isinstance(DC_line, (tuple, list)):
+            self.DC_lines = list(DC_line)
+        else:
+            self.DC_lines = []
         if not pd.isna(additional_DC_lines):
             self.DC_lines += [int(float(line)) for line in str(additional_DC_lines).replace(' ', '').split(',')]
+        
+        self.DC_line = self.DC_lines[0] if self.DC_lines else None
+
         self.voltage_scale = 1 if (pd.isna(voltage_scale) or voltage_scale is None) else voltage_scale
         self.AC_line = None if pd.isna(AC_line) else int(AC_line)
         self.RF_line = None if pd.isna(RF_line) else RF_line
@@ -142,6 +156,8 @@ class DCLine(Parameter):
         self.notes = notes
         self.tex_label = tex_label
         self.verify_no_leakage = verify_no_leakage
+        self.lockin_out = None if pd.isna(lockin_out) else int(lockin_out)
+        self.lockin_in = None if pd.isna(lockin_in) else int(lockin_in)
 
         if self.line_type == 'ohmic':
             self.line_resistance = line_resistance
@@ -155,18 +171,26 @@ class DCLine(Parameter):
             self.breakout_idx = None
         else:
             self.breakout_box, self.breakout_idx = convert_DC_line_to_breakout(self.DC_line)
-
         self.breakout_idxs = [convert_DC_line_to_breakout(DC_line) for DC_line in self.DC_lines]
 
-        # Attach QDac controls
-        has_qdac = any(key.startswith('qdac') for key in qc.Instrument._all_instruments)
-        if self.DAC_channel is not None and has_qdac:
-            self.attach_QDac(V_min, V_max, self.voltage_scale)
+        # Attach QDac controls if there is a connected QDac
+        if self.DAC_channel is not None:
+            self.DAC, self.V, self.I = self.attach_QDac(V_min, V_max, self.voltage_scale)
+            self.v, self.i = self.V, self.I  # Add deprecated lowercase params
+        # Attach lockin controls if there are connected lockins
+        if self.lockin_out is not None:
+            # Attach AC excitation parameter line.V_AC
+            self.V_AC = self.attach_lockin_out(self.lockin_out)
+        if self.lockin_in is not None:
+            # Attach current parameter line.I_AC
+            self.I_AC = self.attach_lockin_in(self.lockin_in)
 
+        # Generate label
+        self.label = self.name
+        if self.line_type == 'ohmic':
+            self.label += ' bias voltage'
         if self.DC_lines:
-            self.label = f"{self.name} : " + "&".join([f"DC{line}" for line in self.DC_lines])
-        else:
-            self.label = self.name
+            self.label += ": " + "&".join([f"DC{line}" for line in self.DC_lines])
 
     def __repr__(self):
         properties = [
@@ -181,14 +205,18 @@ class DCLine(Parameter):
         return f'{self.line_type.upper()}("{self.name}" {properties_str})'
 
     def attach_QDac(self, V_min, V_max, voltage_scale):
-
-        qdac = next(val for key, val in qc.Instrument._all_instruments.items() if key.startswith('qdac'))
+        qdacs = [
+            val for key, val in qc.Instrument._all_instruments.items() 
+            if key.startswith('qdac')
+        ]
+        if not qdacs:
+            return
+        elif len(qdacs) > 1:
+            warnings.warn(f'Found {len(qdacs)} instead of 1. Using first qdac')
+        qdac = qdacs[0]
 
         channel = qdac.channels[self.DAC_channel - 1]
-        self.DAC = channel
 
-        # Attach voltage
-        self.v = channel.v
         # Set voltage limits
         dV = 30e-6  # Add a small offset so that min/max is still allowed
         channel.v.vals = qc.validators.Numbers(V_min - dV, V_max + dV)
@@ -199,16 +227,67 @@ class DCLine(Parameter):
             try:
                 return channel.i()
             except ValueError:
-                # print(f'Error retrieving {self.name} current, trying again')
+                print(f'Error retrieving {self.name} current, trying again')
                 return channel.i()
 
         current_parameter = Parameter(
-            name=f"{self.name}_current",
+            name=f"{self.name}_DC_current",
             unit='A',
             get_cmd=get_DAC_current,
             set_cmd=channel.i
         )
-        self.i = current_parameter
+
+        return channel, channel.v, current_parameter
+
+    def attach_lockin_out(self, lockin_out, excitation_scale=1e5):
+        station = Station.default
+        if station is None or not getattr(station, 'instruments_loaded', False):
+            return
+        elif not hasattr(station, 'lockins'):
+            warnings.warn(
+                f'Could not attach AC excitation to ohmic {self}. '
+                f'Please attach lockins to station.lockins'
+            )
+            return
+        else:
+            lockin = station.lockins[lockin_out]
+
+            V_AC = qc.DelegateParameter(
+                f'V_AC_{self.name}',
+                source=lockin.amplitude,
+                scale=excitation_scale,
+                vals=vals.Numbers(0, 20e-6),
+                unit='V'
+            )
+            # Attach corresponding ohmic
+            V_AC.DC_line = self
+
+            # Update AC excitation value
+            V_AC()
+            
+            return V_AC
+
+    def attach_lockin_in(self, lockin_in, amplification_scale=1e8):
+        station = Station.default
+        if station is None or not getattr(station, 'instruments_loaded', False):
+            return
+        elif not hasattr(station, 'lockins'):
+            warnings.warn(
+                f'Could not attach AC excitation to ohmic {self}. '
+                f'Please attach lockins to station.lockins'
+            )
+            return
+        else:
+            lockin = station.lockins[lockin_in]
+            I_lockin = qc.DelegateParameter(
+                f'I_AC_{self.name}',
+                source=lockin.X,
+                scale=amplification_scale,
+                unit='A'
+            )
+            I_lockin.DC_line = self
+
+            return I_lockin
 
     def get_raw(self):
         try:
@@ -295,6 +374,33 @@ class DCLine(Parameter):
 
         return result
 
+
+    def bias_scan(
+            self,
+            max_voltage=600e-6,
+            step=None,
+            num=201,
+            delay=None,
+            sweep=None,
+            measure=True,
+            show_progress=True,
+            plot=True,
+            **kwargs
+    ):
+        assert self.line_type == 'ohmic'
+        return sweep_gate_to(
+            gate=self,
+            target_voltage=max_voltage,
+            initial_voltage=-max_voltage,
+            step=step,
+            num=num,
+            delay=delay,
+            sweep=sweep,
+            measure=measure,
+            show_progress=show_progress,
+            plot=plot,
+            **kwargs
+        )
 
     def ramp_voltage(self, target_voltage, current_limit=None, delay=100e-3, step=10e-3, silent=True):
         if current_limit is None:

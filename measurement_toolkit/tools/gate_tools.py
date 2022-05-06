@@ -12,7 +12,8 @@ def initialize_DC_lines(
     gates_excel_file, 
     attach_to_qdac=False, 
     namespace=None,
-    update_monitor=True
+    update_monitor=True,
+    parameter_container=None
 ):
     gates_table = pd.read_excel(gates_excel_file, skiprows=[0])
     
@@ -45,7 +46,7 @@ def initialize_DC_lines(
     station.gates = DC_line_groups['gates']
     station.ohmics = DC_line_groups['ohmics']
 
-    # Perform these operations if the station contains relevant instruments
+    # Perform these operations if the station contains relevant DAC instruments
     if attach_to_qdac:
         for instrument_name, instrument in station.components.items():
             if not instrument_name.startswith('qdac'):
@@ -56,6 +57,7 @@ def initialize_DC_lines(
                 instrument.parameters[name] = line
                 line._instrument = instrument
 
+    # Add to monitor
     if update_monitor:
         for param in station._monitor_parameters.copy():    
             if isinstance(param, DCLine):
@@ -67,6 +69,17 @@ def initialize_DC_lines(
                 
         for gate in DC_line_groups['gates'].values():
             qc.config.monitor.parameters_metadata[gate.name] = {'formatter': '{:.4g}'}
+
+    # Update function showing gate voltages
+    if parameter_container is not None:
+        for gate in DC_line_groups['gates'].values():
+            if hasattr(gate, 'v'):
+                parameter_container.add_parameter(
+                    gate, 
+                    formatter='.5g', 
+                    comment=f'DC{gate.DC_line}', 
+                    value_lower_bound=1e-5
+                )
 
     return DC_line_groups
 

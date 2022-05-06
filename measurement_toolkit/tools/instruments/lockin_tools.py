@@ -15,13 +15,19 @@ class LockinTimeParameter(Parameter):
         self._delay = None
         self.delay_scale = 1
 
+    def iterate_lockins(self):
+        if isinstance(self.lockins, dict):
+            return list(self.lockins.values())
+        else:
+            return self.lockins
+
     def get_raw(self):
-        time_constants = [lockin.time_constant() for lockin in self.lockins]
+        time_constants = [lockin.time_constant() for lockin in self.iterate_lockins()]
         assert len(set(time_constants)) == 1, f"Lockin time constants not equal: {time_constants}"
         return time_constants[0]
 
     def set_raw(self, time_constant):
-        for lockin in self.lockins:
+        for lockin in self.iterate_lockins():
             lockin.time_constant(time_constant)
 
         if self._delay is not None:
