@@ -1,3 +1,4 @@
+import warnings
 import numpy as np
 import qcodes as qc
 from measurement_toolkit.tools.general_tools import property_ignore_setter
@@ -6,20 +7,22 @@ __all__ = ['ConductanceParameter']
 
 
 class ConductanceParameter(qc.ManualParameter):
-    G0 = 1 / 25813 / 2
+    G0 = 1 / 25813
 
     def __init__(self,
                  name,
-                 source_parameter,
-                 I_lockin_parameter,
-                 ohmics=(),
+                 excitation_line,
+                 measure_line,
+                 label=None,
                  **kwargs
                  ):
-        self.source_parameter = source_parameter
-        self.ohmics = ohmics
-        self.I_lockin_parameter = I_lockin_parameter
+        self._label = label
 
-        self._label = None
+        self.excitation_line = excitation_line
+        self.measure_line = measure_line
+
+        self.excitation_lockin = self.excitation_line.V_AC.source.instrument
+        self.measure_lockin = self.measure_line.I_AC.source.instrument
 
         super().__init__(
             name=name,
@@ -31,10 +34,10 @@ class ConductanceParameter(qc.ManualParameter):
 
     def __repr__(self):
         source_ohmics_str = '&'.join([
-            f'DC{ohmic}' for ohmic in self.source_parameter.ohmics
+            f'DC{ohmic}' for ohmic in self.excitation_line.DC_lines
         ])
         drain_ohmics_str = '&'.join([
-            f'DC{ohmic}' for ohmic in self.ohmics
+            f'DC{ohmic}' for ohmic in self.measure_line.DC_lines
         ])
         return f'G({source_ohmics_str} → {drain_ohmics_str})'
 
@@ -44,30 +47,12 @@ class ConductanceParameter(qc.ManualParameter):
             return self._label
         else:
             source_ohmics_str = '&'.join([
-                f'DC{ohmic}' for ohmic in self.source_parameter.ohmics
+                f'DC{ohmic}' for ohmic in self.excitation_line.DC_lines
             ])
             drain_ohmics_str = '&'.join([
-                f'DC{ohmic}' for ohmic in self.ohmics
+                f'DC{ohmic}' for ohmic in self.measure_line.DC_lines
             ])
             return f'Conductance {source_ohmics_str} → {drain_ohmics_str}'
-
-    @property
-    def source_conductance(self):
-        station = qc.Station.default
-        source_conductance = 0
-        for source_ohmic_idx in self.source_parameter.ohmics:
-            source_ohmic = station.ohmics[source_ohmic_idx]
-            source_conductance += 1 / source_ohmic.line_resistance
-        return source_conductance
-
-    @property
-    def source_resistance(self):
-        # Calculate line resistance of source ohmics
-        if self.source_conductance > 0:
-            source_resistance = 1 / self.source_conductance
-        else:
-            source_resistance = np.NaN
-        return source_resistance
 
     @property
     def drain_conductance(self):
@@ -89,26 +74,25 @@ class ConductanceParameter(qc.ManualParameter):
 
     @property
     def line_resistance(self):
-        return self.source_resistance + self.drain_resistance
-
-    def update_ohmics(self, *ohmics):
-        self.ohmics = ohmics
+        return self.excitation_line.line_resistance + self.measure_line.line_resistance
 
     def measure(self):
-        R_line = self.line_resistance
+        V_AC = self.excitation_line.V_AC.get_latest()
+        if V_AC < 1e-7:
+            warnings.warn(f'Lockin excitation {V_AC=} too low')
 
-        V_lockin = self.source_parameter.get_latest()
-        I_sd = self.I_lockin_parameter()
+        I_sd = self.measure_line.I_AC()
+
         if I_sd != 0:
-            R_total = V_lockin / I_sd
-            R_device = R_total - R_line 
+            R_total = V_AC / I_sd
+            R_device = R_total - self.line_resistance 
 
             V_device = I_sd * R_device
-            G_device = 1/R_device / self.G0
+            G_device = 1 / R_device / self.G0
         else:
             R_total = np.inf
             R_device = np.inf
-            V_device = V_lockin
+            V_device = V_AC
             G_device = 0
 
         self.values = {

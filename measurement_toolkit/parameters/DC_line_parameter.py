@@ -387,7 +387,7 @@ class DCLine(Parameter):
             plot=True,
             **kwargs
     ):
-        assert self.line_type == 'ohmic'
+        assert self.lockin_out is not None
         return sweep_gate_to(
             gate=self,
             target_voltage=max_voltage,

@@ -46,13 +46,7 @@ class LockinTimeParameter(Parameter):
         self._delay = delay
 
 
-def configure_lockins(
-        lockins, 
-        source_lockin, 
-        excitation_scale=1e5,
-        namespace=None, 
-        update_monitor=True
-):
+def configure_lockins(*lockins):
     station = qc.Station.default
     assert station is not None
     
@@ -73,66 +67,60 @@ def configure_lockins(
             lockin.parameters.pop(f'{axis}noise', None)
             lockin.add_parameter(f'{axis}noise', unit='V', get_cmd=partial(get_lockin_noise, lockin, axis))
 
-    # AC excitation parameter
-    AC_excitation = qc.DelegateParameter(
-        'AC_excitation',
-        source=source_lockin.amplitude,
-        scale=excitation_scale,
-        vals=vals.Numbers(0, 20e-6),
-        unit='V'
-    )
-    AC_excitation.ohmics = []
-    def update_ohmics(AC_excitation, *ohmics):
-        AC_excitation.ohmics = ohmics
-        ohmics_str = '&'.join([f'{station.ohmics[ohmic].name}:DC{ohmic}' for ohmic in ohmics])
-        AC_excitation.label = f"{ohmics_str} AC excitation"
-    AC_excitation.update_ohmics = partial(update_ohmics, AC_excitation)
-    # Update value
-    AC_excitation()
-
-    # Lockin current and conductance
-    current_parameters = []
-    conductance_parameters = []
+    # Add parameter to set all lockin time constants
+    from measurement_toolkit.tools.instruments.lockin_tools import LockinTimeParameter
+    t_lockin = LockinTimeParameter(lockins=lockins)
+    station.add_component(t_lockin)
     
-    if isinstance(lockins, list):
-        lockins = dict(enumerate(lockins, start=1))
-        
-    # Create current and conductance parameters
-    for idx, lockin in lockins.items():
-        I_lockin = qc.DelegateParameter(
-            f'I_lockin{idx}',
-            source=lockin.X,
-            scale=1e8,
-            unit='A'
-        )
-        current_parameters.append(I_lockin)
-        
-        conductance_parameter = ConductanceParameter(
-            name=f'G{idx}',
-            source_parameter=AC_excitation,
-            I_lockin_parameter=I_lockin
-        )
-        conductance_parameters.append(conductance_parameter)
+    return t_lockin
 
-    # Populate namespace
-    if namespace is not None:
-        setattr(namespace, 'AC_excitation', AC_excitation)
-        setattr(namespace, 'current_parameters', current_parameters)
-        setattr(namespace, 'conductance_parameters', conductance_parameters)
-        for conductance_parameter in conductance_parameters:
-            setattr(namespace, conductance_parameter.name, conductance_parameter)
-            
-    # Populate monitor
-    if update_monitor:
-        # Remove any pre-existing conductance parameters
-        for param in station._monitor_parameters.copy():
-            if isinstance(param, ConductanceParameter):
-                station._monitor_parameters.remove(param)
-        for conductance_parameter in conductance_parameters:
-            station._monitor_parameters.insert(0, conductance_parameter)
-    
-    return {
-        'AC_excitation': AC_excitation,
-        'current_parameters': current_parameters,
-        'conductance_parameters': conductance_parameters
+
+def adapt_lockins_to_conductance_paths(lockins, conductance_parameters, lockin_dependencies=(),):
+    def get_master_lockin(lockin):
+        try:
+            next(
+                master_lockin for slave_lockin, master_lockin in lockin_dependencies
+                if slave_lockin == lockin
+            )
+        except StopIteration:
+            return None
+
+    excitation_lockins = {
+        conductance_parameter.excitation_lockin
+        for conductance_parameter in conductance_parameters
     }
+
+    if isinstance(lockins, dict):
+        lockins = list(lockins.values())
+
+    # Setup amplitudes and phases
+    for conductance_parameter in conductance_parameters:
+        # TODO Ideally shouldn't be hardcoded
+        conductance_parameter.excitation_line.V_AC(5e-6)
+        if conductance_parameter.excitation_line == conductance_parameter.measure_line:
+            conductance_parameter.measure_lockin.phase(180)
+        else:
+            conductance_parameter.measure_lockin.phase(0)
+    for lockin in lockins:
+        if lockin not in excitation_lockins:
+            lockin.amplitude(0)
+
+    # First set all lockins that measures itself to internal reference
+    for conductance_parameter in conductance_parameters:
+        if conductance_parameter.excitation_lockin == conductance_parameter.measure_lockin:
+            conductance_parameter.excitation_lockin.reference_source('INT')
+    
+    # Then set relevant ext references depending on reference direction
+    # Note that this can overwrite previous internal reference sources
+    for conductance_parameter in conductance_parameters:
+        if conductance_parameter.excitation_lockin != conductance_parameter.measure_lockin:
+            measure_master_lockin = get_master_lockin(conductance_parameter.measure_lockin)
+            excitation_master_lockin = get_master_lockin(conductance_parameter.excitation_lockin)
+            if measure_master_lockin == conductance_parameter.excitation_lockin:
+                conductance_parameter.measure_lockin.reference_source('EXT')
+                conductance_parameter.excitation_lockin.reference_source('INT')
+            elif excitation_master_lockin == conductance_parameter.measure_lockin:
+                conductance_parameter.measure_lockin.reference_source('INT')
+                conductance_parameter.excitation_lockin.reference_source('EXT')
+            else:
+                raise ValueError('Cannot configure lockins: wrong dependency')
