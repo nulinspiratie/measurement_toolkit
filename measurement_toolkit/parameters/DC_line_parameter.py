@@ -136,12 +136,15 @@ class DCLine(Parameter):
         self.line_type = line_type
         self.side = side
 
-        if isinstance(DC_line, int):
+        if pd.isna(DC_line):
+            self.DC_lines = []
+        elif isinstance(DC_line, (int, float)):
             self.DC_lines = [int(DC_line)]
         elif isinstance(DC_line, (tuple, list)):
             self.DC_lines = list(DC_line)
         else:
             self.DC_lines = []
+
         if not pd.isna(additional_DC_lines):
             self.DC_lines += [int(float(line)) for line in str(additional_DC_lines).replace(' ', '').split(',')]
         
@@ -193,16 +196,23 @@ class DCLine(Parameter):
             self.label += ": " + "&".join([f"DC{line}" for line in self.DC_lines])
 
     def __repr__(self):
-        properties = [
-            f'DC_line: {self.DC_line}',
-            f'breakout_idx: {self.breakout_box}.{self.breakout_idx}',
-        ]
-        if self.DAC_channel is not None:
-            properties.append(f'DAC: {self.DAC_channel}')
+        repr_str = ''
+        try:
+            repr_str = self.line_type.upper()
+            properties = [
+                f'DC_line: {self.DC_line}',
+                f'breakout_idx: {self.breakout_box}.{self.breakout_idx}',
+            ]
+            if self.DAC_channel is not None:
+                properties.append(f'DAC: {self.DAC_channel}')
 
-        properties_str = ', '.join(properties)
+            properties_str = ', '.join(properties)
 
-        return f'{self.line_type.upper()}("{self.name}" {properties_str})'
+            repr_str += f'("{self.name}" {properties_str})'
+        except Exception:
+            warnings.warn('Could not represent DC line')
+            
+        return repr_str
 
     def attach_QDac(self, V_min, V_max, voltage_scale):
         qdacs = [
