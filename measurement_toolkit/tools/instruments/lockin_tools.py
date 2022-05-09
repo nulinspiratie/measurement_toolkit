@@ -78,7 +78,7 @@ def configure_lockins(*lockins):
 def adapt_lockins_to_conductance_paths(lockins, conductance_parameters, lockin_dependencies=(),):
     def get_master_lockin(lockin):
         try:
-            next(
+            return next(
                 master_lockin for slave_lockin, master_lockin in lockin_dependencies
                 if slave_lockin == lockin
             )
@@ -116,6 +116,7 @@ def adapt_lockins_to_conductance_paths(lockins, conductance_parameters, lockin_d
         if conductance_parameter.excitation_lockin != conductance_parameter.measure_lockin:
             measure_master_lockin = get_master_lockin(conductance_parameter.measure_lockin)
             excitation_master_lockin = get_master_lockin(conductance_parameter.excitation_lockin)
+            
             if measure_master_lockin == conductance_parameter.excitation_lockin:
                 conductance_parameter.measure_lockin.reference_source('EXT')
                 conductance_parameter.excitation_lockin.reference_source('INT')
