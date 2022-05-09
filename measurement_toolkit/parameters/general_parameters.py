@@ -87,18 +87,18 @@ class CombinedParameter(Parameter):
                     labels.append(parameter.name)
                     continue
 
-                if  self.scales is not None and self.scales[k] != 1:
-                    label = f'{self.scales[k]:.3g} / {parameter.name}'
-                else:
-                    label = parameter.name
+                label = parameter.name
 
                 if self.offsets is not None and self.offsets[k] != 0:
                     sign = '+' if self.offsets[k] < 0 else '-'
                     label += f' {sign} {abs(self.offsets[k]):.4g}'
+                    
+                if self.scales is not None and self.scales[k] != 1:
+                    label = f'({label}) / {self.scales[k]:.3g}'
 
                 labels.append(label)
 
-            return f'({", ".join(labels)})'
+            return f'{", ".join(labels)}'
 
     @label.setter
     def label(self, label):
