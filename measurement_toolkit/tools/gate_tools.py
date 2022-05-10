@@ -72,7 +72,7 @@ def initialize_DC_lines(
 
     # Update function showing gate voltages
     if parameter_container is not None:
-        for gate in DC_line_groups['gates'].values():
+        for gate in DC_line_groups['lines'].values():
             if hasattr(gate, 'DAC'):
                 parameter_container.add_parameter(
                     gate, 

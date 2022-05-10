@@ -220,7 +220,7 @@ class DCLine(Parameter):
             if key.startswith('qdac')
         ]
         if not qdacs:
-            return
+            return None, None, None
         elif len(qdacs) > 1:
             warnings.warn(f'Found {len(qdacs)} instead of 1. Using first qdac')
         qdac = qdacs[0]
