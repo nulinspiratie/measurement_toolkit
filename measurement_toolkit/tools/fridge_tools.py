@@ -1,5 +1,6 @@
 from pathlib import Path
 import pandas as pd
+from time import sleep
 
 
 fridge_logs_path = Path(r'\\QT6CONTROLRACK\Users\QT6_Control_Rack\Documents\Fridge logs')
@@ -120,3 +121,51 @@ def get_fridge_data(days=2):
 
     return data
 
+
+
+class HeaterTemperatureController():
+    def __init__(fridge_url='http://192.168.23.103/#/', chrome_filepath=r'C:\Program Files\chromedriver.exe'):
+        from selenium import webdriver
+        self.driver = webdriver.Chrome(r'C:\Program Files\chromedriver.exe')
+        # self.driver.get()
+        
+    def set_heater_temperature(self, temperature):
+        from selenium.webdriver.common.keys import Keys
+        from selenium.webdriver.common.action_chains import ActionChains
+
+        # Clear any windows
+        actions = ActionChains(self.driver)
+        actions.send_keys(Keys.ESCAPE)
+        actions.perform()
+        sleep(0.2)
+
+        # Get PID panel
+        PID_panel = self.driver.find_element_by_class_name('g_view_content_part_grey_addon')
+
+        # Click on temperature
+        set_temperature = PID_panel.find_elements_by_class_name('g_setting_data_style')[0]
+        set_temperature.click()
+        sleep(1)
+
+        # Clear old values
+        for k in range(3):
+            # Set temperature
+            actions = ActionChains(self.driver)
+            actions.send_keys(*[Keys.DELETE]*5)
+            actions.send_keys(f'{temperature:.0f}')
+            actions.perform()
+
+            # Verify temperature
+            temperature_group_elem = self.driver.find_element_by_class_name('zinput_group')
+            temperature_input_elem = temperature_group_elem.find_element_by_class_name('xz1')
+            temperature_str = temperature_input_elem.text
+            if temperature_str == str(temperature):
+                break
+            else:
+                print(f'Temperature "{temperature_str}" not equal to {temperature}')
+        else:
+            raise RuntimeError('Could not set temperature')
+            
+        actions = ActionChains(self.driver)
+        actions.send_keys(Keys.ENTER)
+        actions.perform()   
