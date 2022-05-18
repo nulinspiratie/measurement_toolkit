@@ -166,7 +166,7 @@ class DCLine(Parameter):
             self.line_resistance = line_resistance
 
         # Determine DC breakout idxs from DC lines
-        if breakout_idx is not None and not np.isnan(breakout_idx):
+        if breakout_idx is not None and breakout_idx != ' ' and not np.isnan(breakout_idx):
             self.breakout_idx = int(breakout_idx)
             self.breakout_box = int(breakout_box)
             # self.breakout_idxs = []
