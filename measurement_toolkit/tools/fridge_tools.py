@@ -3,7 +3,7 @@ import pandas as pd
 from time import sleep
 
 
-fridge_logs_path = Path(r'\\QT6CONTROLRACK\Users\QT6_Control_Rack\Documents\Fridge logs')
+fridge_tools.fridge_logs_path = Path(r'\\QT6CONTROLRACK\Users\QT6_Control_Rack\QDev Dropbox\qdev\BF1\Fridge logs')
 temperature_labels = {
     'main_temperatures': {'CH1': 'PT_50K', 'CH2': 'PT_4K', 'CH3': 'magnet', 'CH5': 'still', 'CH6': 'mixing_chamber'},
     'probe_temperatures': {'CH1': 'probe'}
@@ -124,14 +124,17 @@ def get_fridge_data(days=2):
 
 
 class HeaterTemperatureController():
-    def __init__(fridge_url='http://192.168.23.103/#/', chrome_filepath=r'C:\Program Files\chromedriver.exe'):
+    def __init__(self, fridge_url='http://192.168.23.103/#/', chrome_filepath=r'C:\Program Files\chromedriver.exe'):
         from selenium import webdriver
         self.driver = webdriver.Chrome(r'C:\Program Files\chromedriver.exe')
-        # self.driver.get()
+        self.driver.get(fridge_url)
         
-    def set_heater_temperature(self, temperature):
+    def set_heater_temperature(self, temperature, execute=True):
         from selenium.webdriver.common.keys import Keys
         from selenium.webdriver.common.action_chains import ActionChains
+
+        temperature = int(temperature * 1e3)
+        assert temperature < 300
 
         # Clear any windows
         actions = ActionChains(self.driver)
@@ -166,6 +169,7 @@ class HeaterTemperatureController():
         else:
             raise RuntimeError('Could not set temperature')
             
-        actions = ActionChains(self.driver)
-        actions.send_keys(Keys.ENTER)
-        actions.perform()   
+        if execute:
+            actions = ActionChains(self.driver)
+            actions.send_keys(Keys.ENTER)
+            actions.perform()   
