@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+import numpy as np
 import xarray
 import numbers
 
@@ -235,3 +236,29 @@ def test_database():
     finally:
         qcodes.config["core"]["db_location"] = db_location
         initialise_database()
+
+def get_fourier_component(arr, frequency, xvals=None):
+    """Extract the Fourier component at a specific frequency"""
+
+    if isinstance(arr, xarray.DataArray):
+        xvals = list(arr.coords.values())[-1].values
+        yvals = arr.values
+    else:
+        assert xvals is not None, "Must provide xvals if arr is not a DataArray"
+        yvals = arr
+
+
+    xvals_shifted = xvals - xvals[0]
+
+    sine = np.sin(2 * np.pi * frequency * xvals_shifted)
+    cosine = np.cos(2 * np.pi * frequency * xvals_shifted)
+    sine_component = sine * yvals
+    cosine_component = cosine * yvals
+
+    demodulated_signal = np.sum(cosine_component) + 1.j * np.sum(sine_component)
+
+    return {
+        'demodulated_signal': demodulated_signal,
+        'sine_component': sine_component,
+        'cosine_component': cosine_component,
+    }
