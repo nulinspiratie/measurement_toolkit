@@ -3,7 +3,7 @@ import pandas as pd
 from time import sleep
 
 
-fridge_tools.fridge_logs_path = Path(r'\\QT6CONTROLRACK\Users\QT6_Control_Rack\QDev Dropbox\qdev\BF1\Fridge logs')
+fridge_logs_path = Path(r'\\QT6CONTROLRACK\Users\QT6_Control_Rack\QDev Dropbox\qdev\BF1\Fridge logs')
 temperature_labels = {
     'main_temperatures': {'CH1': 'PT_50K', 'CH2': 'PT_4K', 'CH3': 'magnet', 'CH5': 'still', 'CH6': 'mixing_chamber'},
     'probe_temperatures': {'CH1': 'probe'}
