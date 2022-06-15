@@ -26,17 +26,22 @@ def plot_data(
         negative_clim=False,
         print_info=False,
         arr_modifier=None,
+        swap_dims=None,
         **plot_kwargs
 ):
     # Ensure we have an xarray
     dataset = convert_to_dataset(dataset, 'xarray')
 
+    if swap_dims is not None:
+        dataset = dataset.swap_dims(swap_dims)
+        
     if axes_structure is None:
         axes_structure = f'[{"1" * len(dataset.data_vars)}]'
 
     # Count expected number of data arrays and ensure it matches
     expected_arrays = axes_structure.count('1') + axes_structure.count('0')
-    assert expected_arrays == len(dataset.data_vars)
+    num_arrays = len(dataset.data_vars)
+    assert expected_arrays == num_arrays, f'{expected_arrays=} does not match {num_arrays=}'
 
     level = 0
     structure = []
@@ -113,6 +118,7 @@ def plot_data(
                     array = array.real
                 if arr_modifier is not None:
                     array = arr_modifier(array)
+                        
                 array.plot(ax=ax, **plot_kwargs)
 
             # Optionally modify clim
