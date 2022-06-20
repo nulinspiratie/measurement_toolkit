@@ -12,7 +12,6 @@ from qcodes.utils import validators as vals
 __all__ = [
     'ramp_voltages_zero',
     'ramp_voltages',
-    'gate_voltages',
     'combine_gates',
     'check_leakages'
 ]
@@ -187,6 +186,13 @@ def configure_qdac2(qdac, inter_delay=30e-3, step=10e-3):
         # Set ramping
         channel.v.inter_delay = inter_delay
         channel.v.step = step
+        
+        # Raise warning if not in low-current measurement range
+        if channel.measurement_range() != 'LOW':
+            print(
+                f'QDac channel {ch_id:02} not set to low current measurement mode.'
+                f'When at 0V, run: qdac.ch{ch_id:02}.measurement_range("low")'\
+            )
 
 
 
