@@ -105,10 +105,10 @@ def execute_file(filepath: (str, Path), mode=None, globals=None, locals=None):
             execution_code = filepath.read_text()
             exec(execution_code, globals, locals)
     except Exception as e:
-        e.args = (
-            e.args[0] + f"\nSilQ initialization error in {filepath}", *e.args[1:]
-        )
-        raise e
+        e.args = (e.args[0], f"SilQ initialization error in {filepath}", *e.args[1:])
+        tb = sys.exc_info()[2]
+        raise e.with_traceback(tb.tb_next.tb_next.tb_next)
+
 
 
 def run_script(
