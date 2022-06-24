@@ -26,8 +26,8 @@ def initialize_DC_lines(
     DC_line_groups = {
         'lines': lines,
         'DC_gates': DC_gates,
-        'gates': {gate.DC_line: gate for gate in DC_gates.values() if gate.DC_line is not None},
-        'ohmics': {line.DC_line: line for name, line in lines.items() if line.line_type == 'ohmic'}
+        'gates': [gate for gate in DC_gates.values() if gate.DC_line is not None],
+        'ohmics': [line for name, line in lines.items() if line.line_type == 'ohmic']
     }
     
     # Populate namespace
@@ -67,7 +67,7 @@ def initialize_DC_lines(
             if hasattr(line, 'v'):
                 station._monitor_parameters.append(line)
                 
-        for gate in DC_line_groups['gates'].values():
+        for gate in DC_line_groups['gates']:
             qc.config.monitor.parameters_metadata[gate.name] = {'formatter': '{:.4g}'}
 
     # Update function showing gate voltages
