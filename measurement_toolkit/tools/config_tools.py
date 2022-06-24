@@ -1,5 +1,7 @@
 import os
+import json
 from pathlib import Path
+import warnings
 
 import qcodes as qc
 from qcodes.configuration.config import Config
@@ -7,14 +9,47 @@ from qcodes.dataset.sqlite.database import initialise_database, initialise_or_cr
 from qcodes.dataset.experiment_container import load_or_create_experiment
 
 __all__ = [
+    'update_plottr_database',
     'initialize_config',
     'initialize_from_config'
 ]
 
 
+def update_plottr_database(database_path):
+    if not isinstance(database_path, Path):
+        database_path = Path(database_path)
+    assert database_path.suffix == '.db'
+
+    root_folder = Path(rf'C:\Users\{os.getlogin()}\AppData\Local\Packages')#\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState'
+    terminal_folder = next(
+        subfolder for subfolder in root_folder.iterdir()
+        if subfolder.name.startswith(f'Microsoft.WindowsTerminal')
+    )
+
+    settings_file = terminal_folder / 'LocalState' / 'settings.json'
+    assert settings_file.exists(), f'Could not find settings file {settings_file}'
+
+    # Load settings file
+    settings = json.loads(settings_file.read_text())
+
+    # Create backup settings file
+    settings_file.with_name('settings_backup.json').write_text(json.dumps(settings))
+
+    # Update settings path
+    profile = next(profile for profile in settings['profiles']['list'] if profile['name'] == 'Plottr')
+    command = profile['commandline'].split('--dbpath')[0]
+    profile['commandline'] = f'{command} --dbpath {database_path.name}'
+    profile['startingDirectory'] = str(database_path.parent)
+
+    # Overwrite settings file
+    settings_file.write_text(json.dumps(settings, indent=4))
+
+    return settings
+
+
 def initialize_config(
     chip_name, experiment_name, device_name, author, 
-    create_db=False, verbose=False, use_mainfolder=True, silent=False
+    create_db=False, verbose=False, use_mainfolder=True, silent=False, update_plottr=False
 ):
     global database, exp
 
@@ -57,7 +92,6 @@ def initialize_config(
                 raise FileNotFoundError(f'Cannot open database. Database folder {db_folder} does not exist')
 
         max_database_incrementer = 99
-        database_filename = db_location.stem
         for k in range(max_database_incrementer, 0, -1):
             db_file = db_folder / db_location.name.format(incrementer=str(k))
             if db_file.exists():
@@ -86,6 +120,15 @@ def initialize_config(
             f'Experiment: {qc.config.user.experiment_name}\n'
             f'Device sample: {qc.config.user.sample_name}'
         )
+
+    if update_plottr:
+        try:
+            update_plottr_database(database_path=qc.config.core.db_location)
+        except Exception:
+            warnings.warn(
+                'Could not update Plottr, to find out why, run:'
+                'update_plottr_database(database_path=qc.config.core.db_location)'
+            )
 
 
 
