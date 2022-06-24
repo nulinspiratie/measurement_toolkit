@@ -67,8 +67,8 @@ def measure_leakage(
         if verbose:
             print(f"Measured current: {current_str} nA")
 
-        if max(abs(current_list)) < current_limit:
-            return {"leakage": False, "current": current_list}
+        if np.max(np.abs(current_list)) < current_limit:
+            return {"leakage": False, "current": current}
         else:
             if message is not None:
                 print(
@@ -82,7 +82,7 @@ def measure_leakage(
             elif delay:
                 sleep(delay)
     else:
-        return {"leakage": True, "current": current_list}
+        return {"leakage": True, "current": current}
 
 
 def measure_gate_leakage(
@@ -138,7 +138,11 @@ def measure_gate_leakage(
                 delay=0.2,
                 verbose=verbose,
             )
-            msmt.measure(results["current"], "leakage_current", unit="A")
+            if isinstance(results['current'], (list, np.ndarray)):
+                for k in RepetitionSweep(len(results['current']), name='idx'):
+                    msmt.measure(results["current"][k], "leakage_current", unit="A")
+            else:
+                msmt.measure(results["current"], "leakage_current", unit="A")
             currents.append(results["current"])
 
             if results["leakage"]:
@@ -177,12 +181,15 @@ def measure_gate_leakages(
 ):
     # Ensure all voltages are within range
     for gate in gates:
-        assert min(voltages) > gate.v.vals._min_value
-        assert max(voltages) < gate.v.vals._max_value
+        assert np.min(voltages) > gate.v.vals._min_value
+        assert np.max(voltages) < gate.v.vals._max_value
 
     with MeasurementLoop(measurement_name) as msmt:
         for gate_idx in RepetitionSweep(len(gates), name="gate_idx"):
             gate = gates[gate_idx]
+
+            if verbose:
+                print(f'Measuring {gate=:}')
 
             measure_gate_leakage(
                 gate=gates[gate_idx],
@@ -193,3 +200,6 @@ def measure_gate_leakages(
                 delay=delay,
                 reset_voltage=True,
             )
+
+
+# def measure_IV(gate, )
