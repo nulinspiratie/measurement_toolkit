@@ -35,7 +35,7 @@ def measure_noise_spectrum(
 
     metadata = {
         'initial_signal': measure_lockin.R(),
-        'source_lockin': source_lockin.name or None,
+        'source_lockin': getattr(source_lockin, 'name') or None,
         # 'initial_params': {param.name: val for param, val in initial_params.items()},
         # 'mask_params': {param.name: val for param, val in mask_params.items()}
     }
