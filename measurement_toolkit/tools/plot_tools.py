@@ -1,6 +1,6 @@
 import numpy as np
 from pathlib import Path
-import numbers
+import warnings
 
 from matplotlib import pyplot as plt
 from matplotlib.ticker import FuncFormatter, EngFormatter
@@ -10,7 +10,7 @@ from matplotlib.figure import Figure
 
 from .data_tools import convert_to_dataset
 
-__all__ = ['plot_data', 'plot_ds', 'plot_dual_axis']
+__all__ = ['plot_data', 'plot_ds', 'plot_dual_axis', 'show_image']
 
 
 def plot_data(
@@ -212,3 +212,40 @@ def plot_dual_axis(dataset, reverse=False, axes=None, figsize=None):
     axes[0].set_title(title)
 
     return fig, axes
+
+
+def show_image(filepath, show=True):
+    try:
+        import io
+        import fitz
+        from PIL import Image
+        from IPython.display import display
+    except ModuleNotFoundError:
+        warnings.warn('Module "fitz" not found, please run "pip install pymupdf"')
+        return
+
+    filepath = Path(filepath)
+
+    if filepath.suffix == '.pdf':
+        pdf_file = fitz.open(filepath)
+
+        # in case there is a need to loop through multiple PDF pages
+        images = []
+        for page_number in range(len(pdf_file)):
+            page = pdf_file[page_number]
+            rgb = page.get_pixmap()
+            pil_image = Image.open(io.BytesIO(rgb.tobytes()))
+            images.append(pil_image)
+
+        if show:
+            display(pil_image)
+        
+        return images if len(images) > 1 else images[0]
+
+    elif filepath.suffix == '.png':
+        pil_image = Image.open(filepath)
+
+        if show:
+            display(pil_image)
+        
+        return pil_image
