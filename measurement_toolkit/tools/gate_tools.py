@@ -19,6 +19,8 @@ def initialize_DC_lines(
     
     lines = {}
     for idx, row in gates_table.iterrows():
+        if row['skip']:
+            continue
         line = DCLine(**row)
         lines[row['name']] = line
 
