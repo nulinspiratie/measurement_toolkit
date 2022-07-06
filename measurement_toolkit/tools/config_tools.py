@@ -2,6 +2,9 @@ import os
 import json
 from pathlib import Path
 import warnings
+from IPython.display import IFrame
+
+from measurement_toolkit.tools.plot_tools import show_image
 
 import qcodes as qc
 from qcodes.configuration.config import Config
@@ -48,8 +51,15 @@ def update_plottr_database(database_path):
 
 
 def initialize_config(
-    chip_name, experiment_name, device_name, author, 
-    create_db=False, verbose=False, use_mainfolder=True, silent=False, update_plottr=False
+    chip_name, 
+    experiment_name, 
+    device_name, 
+    author, 
+    create_db=False, 
+    use_mainfolder=True, 
+    silent=False, 
+    update_plottr=False,
+    show_device=True
 ):
     global database, exp
 
@@ -130,6 +140,12 @@ def initialize_config(
                 'update_plottr_database(database_path=qc.config.core.db_location)'
             )
 
+    if show_device and 'device_image' in config.user:
+        device_image_filepath = Path(config.user.device_image)
+        if device_image_filepath.with_suffix('.png').exists():
+            show_image(device_image_filepath.with_suffix('.png'))
+        elif device_image_filepath.with_suffix('.pdf').exists():
+            show_image(device_image_filepath.with_suffix('.pdf'))
 
 
 def initialize_from_config(
