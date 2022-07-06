@@ -237,7 +237,7 @@ def test_database():
         qcodes.config["core"]["db_location"] = db_location
         initialise_database()
 
-def get_fourier_component(arr, frequency, xvals=None):
+def get_Fourier_component(arr, frequency, xvals=None):
     """Extract the Fourier component at a specific frequency"""
 
     if isinstance(arr, xarray.DataArray):
