@@ -74,6 +74,8 @@ class ConductanceParameter(qc.ManualParameter):
 
     @property
     def line_resistance(self):
+        if np.isnan(self.excitation_line.line_resistance + self.measure_line.line_resistance):
+            warnings.warn('No line resistance provided, please update spreadsheet.')
         return self.excitation_line.line_resistance + self.measure_line.line_resistance
 
     def measure(self):
