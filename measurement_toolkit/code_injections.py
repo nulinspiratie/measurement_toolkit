@@ -3,7 +3,7 @@ import warnings
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.collections import QuadMesh
-from matplotlib.colors import LogNorm
+from matplotlib.colors import LogNorm, SymLogNorm
 
 
 def inject_matplotlib_axis_clim():
@@ -22,12 +22,21 @@ def inject_matplotlib_axis_clim():
 
 
 def inject_matplotlib_axis_logscale():
-    def attach_set_logscale(ax, vmin, vmax):
+    def set_logscale(ax, vmin, vmax):
         for child in ax.get_children():
             if isinstance(child, QuadMesh):
                 child.set_norm(LogNorm(vmin, vmax))
 
-    Axes.set_logscale = attach_set_logscale
+    Axes.set_logscale = set_logscale
+
+    def set_logscale_symmetric(ax, vmin, vmax, lin_threshold=1e-3, linscale=0.1, cmap='RdBu_r'):
+        for child in ax.get_children():
+            if isinstance(child, QuadMesh):
+                child.set_norm(SymLogNorm(vmin=vmin, vmax=vmax, linscale=linscale, linthresh=lin_threshold))
+                child.set_cmap(cmap=cmap)
+
+    Axes.set_logscale = set_logscale
+    Axes.set_logscale_symmetric = set_logscale_symmetric
 
 
 def inject_matplotlib_figure_title_functions():
