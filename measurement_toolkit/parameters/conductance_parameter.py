@@ -3,11 +3,13 @@ import numpy as np
 import qcodes as qc
 from measurement_toolkit.tools.general_tools import property_ignore_setter
 
-__all__ = ['ConductanceParameter']
+__all__ = ['ConductanceParameter', 'create_conductance_parameters']
 
 
 class ConductanceParameter(qc.ManualParameter):
     G0 = 1 / 25813
+
+    _label = None  # Need to define to avoid autoreload issues
 
     def __init__(self,
                  name,
@@ -110,3 +112,22 @@ class ConductanceParameter(qc.ManualParameter):
     def get_raw(self):
         values = self.measure()
         return values['G_device']
+
+
+def create_conductance_parameters(ohmics):
+    source_ohmics = [ohmic for ohmic in ohmics if hasattr(ohmic, 'V_AC')]
+    drain_ohmics = [ohmic for ohmic in ohmics if hasattr(ohmic, 'I_AC')]
+
+    conductance_parameters = []
+    for source_ohmic in source_ohmics:
+        source_name = source_ohmic.name.split('Vo_')[-1]
+        for drain_ohmic in drain_ohmics:
+            drain_name = drain_ohmic.name.split('Vo_')[-1]
+            G = ConductanceParameter(
+                f'G_{source_name}_{drain_name}', 
+                excitation_line=source_ohmic,
+                measure_line=drain_ohmic,
+                label=f'G({source_name}→{drain_name})'
+            )
+            conductance_parameters.append(G)
+    return conductance_parameters
