@@ -168,7 +168,7 @@ def configure_qdac2(qdac, inter_delay=30e-3, step=10e-3):
         channel.parameters.pop('i', None)
         channel.add_parameter(
             name='i',
-            label=f'Channel {id} current',
+            label=f'Channel {channel.id} current',
             unit='A',
             get_cmd=partial(partial(lambda ch: ch.read_current_A()[0]), channel)
         )
@@ -176,7 +176,7 @@ def configure_qdac2(qdac, inter_delay=30e-3, step=10e-3):
         channel.parameters.pop('v', None)
         channel.add_parameter(
             name='v',
-            label=f'Channel {id} voltage',
+            label=f'Channel {channel.id} voltage',
             unit='V',
             set_cmd=channel.dc_constant_V,
             get_cmd=channel.dc_constant_V,
