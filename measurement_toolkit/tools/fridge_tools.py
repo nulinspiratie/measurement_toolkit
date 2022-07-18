@@ -1,6 +1,6 @@
 from pathlib import Path
 import pandas as pd
-from time import sleep
+from time import sleep, perf_counter
 
 
 fridge_logs_path = Path(r'\\QT6CONTROLRACK\Users\QT6_Control_Rack\QDev Dropbox\qdev\BF1\Fridge logs')
@@ -124,6 +124,8 @@ def get_fridge_data(days=2):
 
 
 class HeaterTemperatureController():
+    max_temperature = 0.7
+
     def __init__(self, fridge_url='http://192.168.23.103/#/', chrome_filepath=r'C:\Program Files\chromedriver.exe'):
         from selenium import webdriver
         self.driver = webdriver.Chrome(r'C:\Program Files\chromedriver.exe')
@@ -134,8 +136,9 @@ class HeaterTemperatureController():
         from selenium.webdriver.common.keys import Keys
         from selenium.webdriver.common.action_chains import ActionChains
 
+        assert temperature < self.max_temperature
+
         temperature = int(temperature * 1e3)
-        assert temperature < 300
 
         # Clear any windows
         actions = ActionChains(self.driver)
@@ -174,3 +177,32 @@ class HeaterTemperatureController():
             actions = ActionChains(self.driver)
             actions.send_keys(Keys.ENTER)
             actions.perform()   
+
+
+def wait_for_set_temperature(
+    target_temperature, 
+    max_wait, 
+    label='mixing_chamber', 
+    interval=5,
+    temperature_uncertainty=2e-3,
+    successive_points=3,
+    silent=True
+    ):
+    t0 = perf_counter()
+
+    successes = 0
+    while perf_counter() - t0 < max_wait:
+        temperatures = get_latest_temperatures()
+        temperature = temperatures[label]
+        if not silent:
+            print(f'{temperature=}')
+
+        if abs(temperature - target_temperature) < temperature_uncertainty:
+            successes += 1
+        else:
+            successes = 0
+
+        if successes == successive_points:
+            return True
+
+        sleep(interval)
