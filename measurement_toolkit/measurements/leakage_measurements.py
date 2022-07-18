@@ -173,7 +173,7 @@ def measure_gate_leakage(
 def measure_gate_leakages(
     gates,
     voltages,
-    measure_current_function,
+    measure_current_function=None,
     measurement_name="gate_leakage_matrix",
     current_limit=5e-9,
     delay=100e-3,
@@ -183,6 +183,10 @@ def measure_gate_leakages(
     for gate in gates:
         assert np.min(voltages) > gate.v.vals._min_value
         assert np.max(voltages) < gate.v.vals._max_value
+
+    # Set default measure_current_function
+    if measure_current_function is None:
+        measure_current_function = lambda: [g.i() for g in gates]
 
     with MeasurementLoop(measurement_name) as msmt:
         for gate_idx in RepetitionSweep(len(gates), name="gate_idx"):
@@ -201,5 +205,3 @@ def measure_gate_leakages(
                 reset_voltage=True,
             )
 
-
-# def measure_IV(gate, )
