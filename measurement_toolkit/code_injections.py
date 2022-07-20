@@ -1,4 +1,5 @@
 import warnings
+import numpy as np
 
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -21,10 +22,42 @@ def inject_matplotlib_axis_clim():
     Axes.get_clim = attach_get_clim
 
 
+def get_lim(ax, above_zero=False):
+    min_val = None
+    max_val = None
+    
+    for child in ax.get_children():
+        if isinstance(child, QuadMesh):
+            arr = child.get_array()
+            if above_zero:
+                arr = arr.copy()
+                arr[arr<=0] = np.nan
+
+            if min_val is None or np.nanmin(arr) < min_val:
+                min_val = np.nanmin(arr)
+            if max_val is None or np.nanmax(arr) > max_val:
+                max_val = np.nanmax(arr)
+    return min_val, max_val
+
+
+def inject_matplotlib_axis_lim():
+    Axes.get_lim = get_lim
+
+
 def inject_matplotlib_axis_logscale():
-    def set_logscale(ax, vmin, vmax):
+    def set_logscale(ax, vmin=None, vmax=None, force_positive=False):
+        if vmin is None or vmax is None:
+            min_vals = get_lim(ax, above_zero=True)
+            if vmin is None:
+                vmin = min_vals[0]
+            if vmax is None:
+                vmax = min_vals[1]
+
         for child in ax.get_children():
             if isinstance(child, QuadMesh):
+                if force_positive:
+                    arr = child.get_array()
+                    arr[arr < vmin] = vmin
                 child.set_norm(LogNorm(vmin, vmax))
 
     Axes.set_logscale = set_logscale
@@ -99,6 +132,7 @@ def inject_matplotlib_axis_get_colorbar():
 
 def perform_code_injections():
     inject_matplotlib_axis_clim()
+    inject_matplotlib_axis_lim()
     inject_matplotlib_axis_logscale()
     inject_matplotlib_figure_title_functions()
     inject_matplotlib_axis_title_functions()
