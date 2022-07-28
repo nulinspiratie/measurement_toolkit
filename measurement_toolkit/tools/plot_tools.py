@@ -2,6 +2,8 @@ import numpy as np
 from pathlib import Path
 import warnings
 
+import matplotlib as mpl
+from matplotlib.collections import QuadMesh
 from matplotlib import pyplot as plt
 from matplotlib.ticker import FuncFormatter, EngFormatter
 from matplotlib.axis import Axis
@@ -24,7 +26,6 @@ def plot_data(
         transpose=False,
         set_title=True,
         negative_clim=False,
-        print_info=False,
         arr_modifier=None,
         swap_dims=None,
         **plot_kwargs
@@ -119,21 +120,33 @@ def plot_data(
                 if arr_modifier is not None:
                     array = arr_modifier(array)
                         
+                # Plot data
                 array.plot(ax=ax, **plot_kwargs)
 
-            # Optionally modify clim
-            if array.ndim == 2:
-                if clim is not None:
-                    ax.set_clim(*clim)
-                elif not negative_clim:
-                    _clim = ax.get_clim()
-                    if _clim is not None:
-                        ax.set_clim(max(_clim[0], 0), _clim[1])
-
+            # Set engineering tick formatting
             if xscale:
                 ax.xaxis.set_major_formatter(EngFormatter(sep=''))
             if yscale:
                 ax.yaxis.set_major_formatter(EngFormatter(sep=''))
+
+            # Apply modifications for 2d colorplots
+            is_2d = any(isinstance(child, QuadMesh) for child in ax.get_children())
+            if is_2d:
+                try:  # Wrap in try/except because it's still experimental
+                    # Optionally modify clim
+                    if clim is not None:
+                        ax.set_clim(*clim)
+                    else:
+                        ax.set_clim(*ax.get_lim())
+                        
+                    # Optionally set diverging cmap
+                    if negative_clim:
+                        ax.set_diverging_cmap(positive_cmap=plot_kwargs.get('cmap'))
+                    else:
+                        ax.set_diverging_cmap(positive_cmap=plot_kwargs.get('cmap'), negative_limit_color=None)
+                except Exception as e:
+                    warnings.warn(f'Error setting 2d property: {e}')
+
 
         if len(figure_list) == 1:
             figure_list = figure_list[0]
@@ -249,3 +262,45 @@ def show_image(filepath, show=True):
             display(pil_image)
         
         return pil_image
+
+
+def create_diverging_cmap(vmin, vmax, center=0, positive_cmap=None, negative_limit_color='red', negative_scale=0.5):
+    import matplotlib.colors as mcolors
+    from matplotlib import cm
+
+    # Set default cmap
+    if positive_cmap is None:
+        positive_cmap = mpl.rcParams['image.cmap']
+
+    # Convert positive cmap to actual cmap
+    positive_cmap = cm.get_cmap(positive_cmap)
+    center_color = positive_cmap(0)
+
+    # Convert negative_limit_color
+    if isinstance(negative_limit_color, str):
+        # Convert to RGBA
+        negative_limit_color = mcolors.to_rgba(negative_limit_color)
+    elif negative_limit_color is None:
+        # Choose lowest color of positive cmap
+        negative_limit_color = center_color
+    elif len(negative_limit_color) == 3:
+        negative_limit_color = tuple([*negative_limit_color, 1])
+    
+    # Ensure there is a point with exactly the center value
+    color_values = np.linspace(vmin, vmax, 256)
+    center_idx = np.argmin(np.abs(color_values - center))
+    positive_values = color_values[center_idx:] = np.linspace(center, vmax, len(color_values[center_idx:]))
+    negative_values = color_values[:center_idx+1] = np.linspace(vmin, center, len(color_values[:center_idx+1]))
+
+    # Positive cmap
+    positive_colors = positive_cmap(np.linspace(0, 1, len(positive_values)))
+    
+    # Negative cmap
+    negative_colors = [
+        [negative_limit_color[l] + (center_color[l]-negative_limit_color[l])*(fraction**negative_scale) for l in range(4)] 
+        for fraction in np.linspace(0, 1, len(negative_values)-1)
+    ]
+
+    combined_colors = [*negative_colors, *positive_colors]
+    diverging_cmap = mcolors.ListedColormap(combined_colors)
+    return diverging_cmap

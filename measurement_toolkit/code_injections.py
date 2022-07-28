@@ -5,21 +5,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.collections import QuadMesh
 from matplotlib.colors import LogNorm, SymLogNorm
-
-
-def inject_matplotlib_axis_clim():
-    def attach_set_clim(ax, vmin, vmax):
-        for child in ax.get_children():
-            if isinstance(child, QuadMesh):
-                child.set_clim(vmin, vmax)
-
-    def attach_get_clim(ax):
-        for child in ax.get_children():
-            if isinstance(child, QuadMesh):
-                return child.get_clim()
-
-    Axes.set_clim = attach_set_clim
-    Axes.get_clim = attach_get_clim
+from measurement_toolkit.tools.plot_tools import create_diverging_cmap
 
 
 def get_lim(ax, above_zero=False):
@@ -43,6 +29,47 @@ def get_lim(ax, above_zero=False):
 def inject_matplotlib_axis_lim():
     Axes.get_lim = get_lim
 
+
+def inject_matplotlib_axis_clim():
+    def set_clim(ax, vmin=None, vmax=None):
+        if vmin is None:
+            vmin = ax.get_lim()[0]
+        if vmax is None:
+            vmax = ax.get_lim()[1]
+        for child in ax.get_children():
+            if isinstance(child, QuadMesh):
+                child.set_clim(vmin, vmax)
+
+    def get_clim(ax):
+        for child in ax.get_children():
+            if isinstance(child, QuadMesh):
+                return child.get_clim()
+
+    Axes.set_clim = set_clim
+    Axes.get_clim = get_clim
+
+
+def inject_matplotlib_diverging_cmap():
+    def set_diverging_cmap(ax, vmin=None, vmax=None, center=0, positive_cmap=None, negative_limit_color='red', negative_scale=0.5):
+        if vmin is None:
+            vmin = ax.get_lim()[0]
+        if vmax is None:
+            vmax = ax.get_lim()[1]
+
+        diverging_cmap = create_diverging_cmap(
+            vmin=vmin,
+            vmax=vmax,
+            center=center,
+            positive_cmap=positive_cmap,
+            negative_limit_color=negative_limit_color,
+            negative_scale=negative_scale
+        )
+
+        for child in ax.get_children():
+            if isinstance(child, QuadMesh):
+                child.set_cmap(diverging_cmap)
+
+    Axes.set_diverging_cmap = set_diverging_cmap
 
 def inject_matplotlib_axis_logscale():
     def set_logscale(ax, vmin=None, vmax=None, force_positive=False):
@@ -133,6 +160,7 @@ def inject_matplotlib_axis_get_colorbar():
 def perform_code_injections():
     inject_matplotlib_axis_clim()
     inject_matplotlib_axis_lim()
+    inject_matplotlib_diverging_cmap()
     inject_matplotlib_axis_logscale()
     inject_matplotlib_figure_title_functions()
     inject_matplotlib_axis_title_functions()
