@@ -138,12 +138,16 @@ def plot_data(
                         ax.set_clim(*clim)
                     else:
                         ax.set_clim(*ax.get_lim())
-                        
-                    # Optionally set diverging cmap
-                    if negative_clim:
-                        ax.set_diverging_cmap(positive_cmap=plot_kwargs.get('cmap'))
-                    else:
-                        ax.set_diverging_cmap(positive_cmap=plot_kwargs.get('cmap'), negative_limit_color=None)
+
+                    # Set diverging cmap
+                    cmap_kwargs = {'positive_cmap': plot_kwargs.get('cmap')}
+                    if clim is not None:
+                        cmap_kwargs['vmin'] = clim[0]
+                        cmap_kwargs['vmax'] = clim[1]
+                    if not negative_clim:
+                        # Don't use separate color for negative values
+                        cmap_kwargs['negative_limit_color'] = None
+                    ax.set_diverging_cmap(**cmap_kwargs)
                 except Exception as e:
                     warnings.warn(f'Error setting 2d property: {e}')
 
