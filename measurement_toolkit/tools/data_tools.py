@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from xml.sax.saxutils import prepare_input_source
 import numpy as np
 import xarray
 import numbers
@@ -19,12 +20,12 @@ __all__ = [
     'test_database'
 ]
 
-def load_data(run_id, dataset_type='xarray', print_info=False):
+def load_data(run_id, dataset_type='xarray', print_summary=True):
     """Loads a dataset by run_id, automatically converts it to target type
     """
     assert dataset_type in ['xarray', 'xarray_dict', 'pandas', 'pandas_dict', 'qcodes']
     qcodes_dataset = load_by_run_spec(captured_run_id=run_id)
-    if print_info:
+    if print_summary:
         dataset_information(qcodes_dataset, silent=False)
 
     dataset = convert_to_dataset(qcodes_dataset, dataset_type=dataset_type)
@@ -34,7 +35,7 @@ def load_data(run_id, dataset_type='xarray', print_info=False):
 
 def convert_to_dataset(dataset_or_run_id, dataset_type='xarray'):
     if isinstance(dataset_or_run_id, numbers.Integral):
-        dataset = load_data(dataset_or_run_id, dataset_type=dataset_type)
+        dataset = load_data(dataset_or_run_id, dataset_type=dataset_type, print_summary=False)
     elif isinstance(dataset_or_run_id, qcodes.dataset.data_set.DataSet):
         if dataset_type == 'xarray':
             dataset = dataset_or_run_id.to_xarray_dataset()
@@ -46,10 +47,13 @@ def convert_to_dataset(dataset_or_run_id, dataset_type='xarray'):
             dataset = dataset_or_run_id.to_pandas_dataframe_dict()
         elif dataset_type == 'qcodes':
             dataset = dataset_or_run_id
-    elif isinstance(dataset_or_run_id, xarray.Dataset) and dataset_type == 'xarray':
-        dataset = dataset_or_run_id
+    elif isinstance(dataset_or_run_id, xarray.Dataset):
+        if dataset_type == 'xarray':
+            dataset = dataset_or_run_id
+        else:
+            dataset = convert_to_dataset(dataset_or_run_id.run_id, dataset_type)
     elif not isinstance(dataset_or_run_id, qcodes.dataset.data_set.DataSet) and dataset_type == 'qcodes':
-        dataset = load_data(dataset_or_run_id, dataset_type='qcodes')
+        dataset = load_data(dataset_or_run_id, dataset_type='qcodes', print_summary=False)
     else:
         raise NotImplementedError('This conversion has not yet been implemented')
     # dataset.__set qcodes = qcodes_dataset
@@ -142,7 +146,7 @@ def smooth(y, window_size, order=3, deriv=0, rate=1):
 
 def magnetic_fields(dataset=None, silent=False):
     if isinstance(dataset, int):
-        dataset = load_data(dataset, 'qcodes')
+        dataset = load_data(dataset, 'qcodes', print_summary=False), 
 
     if dataset is not None:
         magnetic_fields = {}
@@ -155,7 +159,7 @@ def magnetic_fields(dataset=None, silent=False):
 
 def retrieve_station_component(dataset, component_name, return_dict=False, **kwargs):
     if isinstance(dataset, int):
-        dataset = load_data(dataset, 'qcodes')
+        dataset = load_data(dataset, 'qcodes', print_summary=False)
 
     if dataset is not None:
         from measurement_toolkit.tools.parameter_container import print_parameters_from_container
@@ -169,30 +173,19 @@ def retrieve_station_component(dataset, component_name, return_dict=False, **kwa
 
 
 def dataset_information(dataset, silent=True):
-    if isinstance(dataset, int):
-        dataset = load_data(dataset, 'qcodes')
+    dataset = convert_to_dataset(dataset, 'qcodes')
 
-    results = {}
-    try:
-        results['magnetic_fields'] = magnetic_fields(dataset, silent=silent)
-    except Exception:
-        print('Could not extract magnetic fields')
-
-    try:
-        from measurement_toolkit.tools.instruments.qdac_tools import gate_voltages
-        results['voltages'] = gate_voltages(dataset, silent=True)
-        if not silent:
-            gate_voltages(dataset, silent=False)
-    except Exception:
-        print('Could not extract gate voltages')
-    return results
+    if silent:
+        return retrieve_station_component(dataset, 'system_summary', return_dict=True)
+    else:
+        retrieve_station_component(dataset, 'system_summary', return_dict=False, newline=False, evaluatable=True)
 
 
 def modify_measurement_note(run_id=None):
     if run_id is None:
         run_id = get_latest_run_id()
 
-    dataset = load_data(run_id, dataset_type='qcodes', silent=True)
+    dataset = load_data(run_id, dataset_type='qcodes', print_summary=False)
 
     # Get measurement notes
     try:

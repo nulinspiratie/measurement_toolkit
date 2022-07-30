@@ -3,8 +3,9 @@ from qcodes.instrument.parameter import _BaseParameter
 from qcodes.utils.metadata import Metadatable
 
 
-def print_parameters_from_container(parameters, evaluatable=True, comment=True):
-    # Print parameters
+def print_parameters_from_container(parameters, evaluatable=True, comment=True, newline=True):
+    parameter_strings = []
+
     for name, parameter_info in parameters.items():
         if 'unit' in parameter_info:
             unit = parameter_info['unit']
@@ -22,15 +23,21 @@ def print_parameters_from_container(parameters, evaluatable=True, comment=True):
         value_str = ('{:'+formatter+'}').format(parameter_info['value'])
 
         if evaluatable:
+            parameter_string = f'{name}({value_str})'
+            if comment and newline and parameter_info.get('comment'):
+                parameter_string += f'  # {parameter_info["comment"]}'
+        else:
             parameter_string = f'{name} = {value_str}'
             if unit:
                 parameter_string += f' {parameter_info["unit"]}'
-        else:
-            parameter_string = f'{name}({value_str})'
-            if comment and parameter_info.get('comment'):
-                parameter_string += f'  # {parameter_info["comment"]}'
-
-        print(parameter_string)
+        parameter_strings.append(parameter_string)
+    
+    if newline:
+        result = '\n'.join(parameter_strings)
+    else:
+        result = ', '.join(parameter_strings)
+    
+    print(result)
 
 
 class ParameterContainer(Metadatable):
@@ -89,15 +96,12 @@ class ParameterContainer(Metadatable):
                 parameter_info['value'] = parameter.get_latest()
 
     def __call__(self, *args, **kwargs):
-        default_kwargs = dict(return_dict=True, evaluatable=False, comment=True)
-        kwargs = {**default_kwargs, **kwargs}
-
         if args:
             return self.call_with_args(*args, **kwargs)
 
         self.update()
 
-        if kwargs['return_dict']:
+        if kwargs.get('return_dict', False):
             self.print(evaluatable=kwargs['evaluatable'], comment=kwargs['comment'])
         else:
             self.update()

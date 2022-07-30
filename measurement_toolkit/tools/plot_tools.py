@@ -10,7 +10,7 @@ from matplotlib.axis import Axis
 from matplotlib.axes import Subplot
 from matplotlib.figure import Figure
 
-from .data_tools import convert_to_dataset
+from .data_tools import convert_to_dataset, dataset_information
 
 __all__ = ['plot_data', 'plot_ds', 'plot_dual_axis', 'show_image']
 
@@ -28,8 +28,13 @@ def plot_data(
         negative_clim=False,
         arr_modifier=None,
         swap_dims=None,
+        print_summary=True,
         **plot_kwargs
 ):
+
+    if print_summary:
+        dataset_information(dataset, silent=False)
+
     # Ensure we have an xarray
     dataset = convert_to_dataset(dataset, 'xarray')
 
