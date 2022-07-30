@@ -3,6 +3,15 @@ import pandas as pd
 from time import sleep, perf_counter
 
 
+__all__ = [
+    'get_fridge_date_folders', 
+    'extract_temperature_data', 
+    'get_latest_temperatures', 
+    'get_fridge_data', 
+    'HeaterTemperatureController',
+    'wait_for_set_temperature'
+]
+
 fridge_logs_path = Path(r'\\QT6CONTROLRACK\Users\QT6_Control_Rack\QDev Dropbox\qdev\BF1\Fridge logs')
 temperature_labels = {
     'main_temperatures': {'CH1': 'PT_50K', 'CH2': 'PT_4K', 'CH3': 'magnet', 'CH5': 'still', 'CH6': 'mixing_chamber'},
@@ -122,9 +131,9 @@ def get_fridge_data(days=2):
     return data
 
 
-
 class HeaterTemperatureController():
     max_temperature = 0.7
+    max_power = 2e-3
 
     def __init__(self, fridge_url='http://192.168.23.103/#/', chrome_filepath=r'C:\Program Files\chromedriver.exe'):
         from selenium import webdriver
@@ -133,6 +142,7 @@ class HeaterTemperatureController():
         print('Please navigate to the heater webpage by clicking on it in Chrome')
         
     def set_heater_temperature(self, temperature, execute=True):
+        from selenium.webdriver.common.by import By
         from selenium.webdriver.common.keys import Keys
         from selenium.webdriver.common.action_chains import ActionChains
 
@@ -147,12 +157,18 @@ class HeaterTemperatureController():
         sleep(0.2)
 
         # Get PID panel
-        PID_panel = self.driver.find_element_by_class_name('g_view_content_part_grey_addon')
+        PID_panel = self.driver.find_element(By.CLASS_NAME, 'g_view_content_part_grey_addon')
 
         # Click on temperature
-        set_temperature = PID_panel.find_elements_by_class_name('g_setting_data_style')[0]
+        set_temperature = PID_panel.find_elements(By.CLASS_NAME, 'g_setting_data_style')[0]
         set_temperature.click()
         sleep(1)
+
+        # Ensure we have mK scale
+        scale_window = self.driver.find_element(By.CLASS_NAME, 'xz2')
+        elems = scale_window.find_elements(By.CLASS_NAME, 'ng-star-inserted')
+        uK_scale = any(elem.get_attribute("innerHTML") == 'm' for elem in elems)
+        assert uK_scale, "scale is not mK"
 
         # Clear old values
         for k in range(3):
@@ -163,8 +179,8 @@ class HeaterTemperatureController():
             actions.perform()
 
             # Verify temperature
-            temperature_group_elem = self.driver.find_element_by_class_name('zinput_group')
-            temperature_input_elem = temperature_group_elem.find_element_by_class_name('xz1')
+            temperature_group_elem = self.driver.find_element(By.CLASS_NAME, 'zinput_group')
+            temperature_input_elem = temperature_group_elem.find_element(By.CLASS_NAME, 'xz1')
             temperature_str = temperature_input_elem.text
             if temperature_str == str(temperature):
                 break
@@ -178,6 +194,57 @@ class HeaterTemperatureController():
             actions.send_keys(Keys.ENTER)
             actions.perform()   
 
+    def set_heater_power(self, power, execute=True):
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.common.keys import Keys
+        from selenium.webdriver.common.action_chains import ActionChains
+
+        assert power < self.max_power
+
+        power_uW = int(power * 1e6)
+
+        # Clear any windows
+        actions = ActionChains(self.driver)
+        actions.send_keys(Keys.ESCAPE)
+        actions.perform()
+        sleep(0.2)
+
+        # Get PID panel
+        PID_panel = self.driver.find_element(By.CLASS_NAME, 'g_view_content_part')
+
+        # Click on power
+        set_power = PID_panel.find_elements(By.CLASS_NAME, 'g_setting_data_style')[3]
+        set_power.click()
+        sleep(1)
+
+        # Ensure we have uW scale
+        scale_window = self.driver.find_element(By.CLASS_NAME, 'xz2')
+        elems = scale_window.find_elements(By.CLASS_NAME, 'ng-star-inserted')
+        mK_scale = any(elem.get_attribute("innerHTML") == 'µ' for elem in elems)
+        assert mK_scale, "scale is not µW"
+        # Clear old values
+        for k in range(3):
+            # Set power
+            actions = ActionChains(self.driver)
+            actions.send_keys(*[Keys.DELETE]*5)
+            actions.send_keys(f'{power_uW:.0f}')
+            actions.perform()
+
+            # Verify power
+            power_group_elem = self.driver.find_element(By.CLASS_NAME, 'zinput_group')
+            power_input_elem = power_group_elem.find_element(By.CLASS_NAME, 'xz1')
+            power_str = power_input_elem.text
+            if power_str == str(power_uW):
+                break
+            else:
+                print(f'Temperature "{power_str}" not equal to {power}')
+        else:
+            raise RuntimeError('Could not set power')
+            
+        if execute:
+            actions = ActionChains(self.driver)
+            actions.send_keys(Keys.ENTER)
+            actions.perform() 
 
 def wait_for_set_temperature(
     target_temperature, 
