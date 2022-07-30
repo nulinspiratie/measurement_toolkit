@@ -189,6 +189,9 @@ def measure_gate_leakages(
         measure_current_function = lambda: [g.i() for g in gates]
 
     with MeasurementLoop(measurement_name) as msmt:
+        # Add gates to metadata
+        msmt.dataset.add_metadata('gates', str([g.name for g in gates]))
+
         for gate_idx in RepetitionSweep(len(gates), name="gate_idx"):
             gate = gates[gate_idx]
 
@@ -204,4 +207,6 @@ def measure_gate_leakages(
                 delay=delay,
                 reset_voltage=True,
             )
-
+            
+    print(f'Finished measuring leakages, run id #{msmt.dataset.run_id}')
+    return msmt
