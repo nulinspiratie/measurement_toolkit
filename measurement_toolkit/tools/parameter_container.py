@@ -101,8 +101,8 @@ class ParameterContainer(Metadatable):
 
         self.update()
 
-        if kwargs.get('return_dict', False):
-            self.print(evaluatable=kwargs['evaluatable'], comment=kwargs['comment'])
+        if kwargs.get('return_dict', True):
+            self.print(evaluatable=kwargs.get('evaluatable', True), comment=kwargs.get('comment', True))
         else:
             self.update()
             return self.get_parameter_values()
