@@ -2,6 +2,7 @@ from qcodes import (
     load_by_run_spec,
 )
 from qcodes.utils.dataset.doNd import do1d, do2d, dond, plot, LinSweep, LogSweep
+from qcodes.instrument_drivers.stanford_research.SR830 import SR830
 
 from measurement_toolkit.parameters.general_parameters import RepetitionParameter
 
@@ -21,7 +22,7 @@ def measure_noise_spectrum(
         plot=True
 ):
     mask_params = {
-        measure_lockin.reference_source: 'INT',
+        measure_lockin.reference_source: 'internal' if isinstance(measure_lockin, SR830) else 'INT',
         measure_lockin.time_constant: time_constant,
     }
 
