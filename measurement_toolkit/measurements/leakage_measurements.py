@@ -122,7 +122,7 @@ def measure_gate_leakage(
     # Sweep voltages and check for leakage
     currents = []
     with MeasurementLoop(f"gate_leakage_{gate.name}") as msmt:
-        for V in Sweep(ArraySweep(gate, sweep_voltages)):
+        for V in Sweep(gate, sweep_voltages):
             if verbose:
                 print(f"Gate {gate} set to {V:.4g} V")
 
