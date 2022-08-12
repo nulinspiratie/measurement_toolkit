@@ -17,6 +17,7 @@ def get_slew_rate(qdac_channel):
     else:
         return qdac_channel.v.step / qdac_channel.v.inter_delay
 
+
 class QDacSweeper():
     def __init__(self, name, qdac_channel):
         self.name = name
@@ -74,8 +75,91 @@ class QDac2Sweeper():
         self.qdac = self.qdac_channel.parent
         self.silent = True
 
+        from qcodes_contrib_drivers.drivers.QDevil.QDAC2 import QDac2
+        assert isinstance(self.qdac, QDac2), "gate DAC instrument must be a QDac-II"
+
     def setup(self):
         self.trigger_channel.width_s(.1e-3)
+
+    # def ramp_gate(self, V_start, V_stop, duration, max_ramp_rate=0, repetitions=1, trigger_channel=None, delay_start=None, num=1001, plot=False, silent=True):
+    #     """Ramp QDAC-II gate voltage"""
+
+    #     dt = duration / (num-1)
+    #     assert dt > 2e-6 - 1e-9, f"Time step {dt} must be >2us, please decrease 'num'"
+    #     V0 = self()
+
+    #     # Generate sweep voltages
+    #     voltages = []
+
+    #     # Optionally add sweep from current gate voltage V0 to ramp start V_start
+    #     if max_ramp_rate:
+    #         t_ramp_start = abs(V_start - V0) / max_ramp_rate
+    #         num_start = int(np.ceil(t_ramp_start / dt)) + 1
+    #         voltages += list(np.linspace(V0, V_start, num_start))
+
+    #     # Optionally add sweep that remains at V_start for delay_start
+    #     if delay_start:
+    #         num_delay_start = int(np.ceil(delay_start / dt))
+    #         voltages += list(np.repeat(V_start, num_delay_start))
+
+    #     # Add ramp sweep
+    #     trigger_delay = len(voltages) * dt
+    #     voltages += list(np.linspace(V_start, V_stop, num))
+
+    #     # Optionally add sweep from final gate voltage V_stop to original gate voltage
+    #     if max_ramp_rate:
+    #         t_ramp_stop = abs(V_stop - V0) / max_ramp_rate
+    #         num_stop = int(np.ceil(t_ramp_stop / dt)) + 1
+    #         voltages += list(np.linspace(V_stop, V0, num_stop))
+    #     else:
+    #         # Return to initial voltage
+    #         voltages += [V0]
+        
+    #     voltages = np.array(voltages)
+
+    #     # Ensure number of points does not exceed limit
+    #     assert len(voltages) < 1e5, f"Number of points {len(voltages)} exceeds limit 100000"
+
+    #     # Ensure all voltages are within allowed values
+    #     if self.v.vals is not None:
+    #         scale = self.v.scale or 1
+    #         V_min = getattr(self.v.vals, '_min_value', -10) * scale
+    #         V_max = getattr(self.v.vals, '_max_value', 10) * scale
+    #         V_min = max(V_min, -10)
+    #         V_max = min(V_max, 10)
+    #         assert np.all((V_min <= voltages) & (voltages <= V_max)), f"Voltages are out of range {V_min} <= voltages <= {V_max}"
+
+    #     # Optionally plot results
+    #     if plot:
+    #         fig, ax = plt.subplots(figsize=(10,4))
+    #         t_list = np.arange(len(voltages)) * dt
+    #         ax.plot(t_list, voltages)
+    #         ax.grid('on')
+
+    #         if trigger_channel:
+    #             ax_trigger = ax.twinx()
+    #             ax_trigger.plot(trigger_delay + np.array([0,0, .2e-3, .2e-3]), [0,5.5,5.5,0], color='r', alpha=0.5)
+
+    #     # Program QDac with list of voltages
+    #     qdac_channel = self.DAC
+    #     dc_list = qdac_channel.dc_list(repetitions=repetitions,voltages=voltages,dwell_s=dt)
+
+    #     # Optionally add trigger
+    #     if trigger_channel is not None:
+    #         qdac_channel.parent.free_all_triggers()
+    #         trigger = dc_list.start_marker()
+    #         trigger_channel.width_s(.2e-3)  # TODO shouldn't be hardcoded
+    #         trigger_channel.polarity('norm')
+    #         trigger_channel.delay_s(trigger_delay)
+    #         trigger_channel.source_from_trigger(trigger)
+
+    #     if not silent:
+    #         print(f'Number of points={len(voltages)}, duration={len(voltages)*dt*1e3:.3f} ms, dt={dt*1e6:.1f} us')
+    #         print(f'Voltage range: V_min={min(voltages):.3f}, V_max={max(voltages):.3f}, all within range [{V_min:.3f}, {V_max:.3f}]')
+
+    #     dc_list.start()
+
+    #     return dc_list
 
     def ramp(self, V_start, V_stop, duration, trigger=True, num_points=2001, block=True):
         V_start_scaled = V_start / self.scale
