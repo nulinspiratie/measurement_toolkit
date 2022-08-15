@@ -67,164 +67,114 @@ class QDacSweeper():
 
 
 class QDac2Sweeper():
-    def __init__(self, name, qdac_channel, trigger_channel, scale=1):
+    trigger_width = 0.1e-3
+
+    def __init__(self, name, qdac_channel, trigger_channel, max_ramp_rate=0, scale=None):
         self.name = name
         self.qdac_channel = qdac_channel
         self.trigger_channel = trigger_channel
-        self.scale = scale
+        self.scale = scale or qdac_channel.v.scale
+        self.max_ramp_rate = max_ramp_rate
         self.qdac = self.qdac_channel.parent
         self.silent = True
 
+        # Ensure we're using a QDAC2
         from qcodes_contrib_drivers.drivers.QDevil.QDAC2 import QDac2
         assert isinstance(self.qdac, QDac2), "gate DAC instrument must be a QDac-II"
 
-    def setup(self):
-        self.trigger_channel.width_s(.1e-3)
+    def setup_ramp(self, V_start, V_stop, duration, repetitions=1, delay_start=None, num=1001, plot=False, silent=True):
+        """Ramp QDAC-II gate voltage"""
+        dt = duration / (num-1)
+        assert dt > 2e-6 - 1e-9, f"Time step {dt*1e6:.1f}us must be >2us, please decrease 'num'"
 
-    # def ramp_gate(self, V_start, V_stop, duration, max_ramp_rate=0, repetitions=1, trigger_channel=None, delay_start=None, num=1001, plot=False, silent=True):
-    #     """Ramp QDAC-II gate voltage"""
+        # Record voltage before sweep
+        V0 = self()
 
-    #     dt = duration / (num-1)
-    #     assert dt > 2e-6 - 1e-9, f"Time step {dt} must be >2us, please decrease 'num'"
-    #     V0 = self()
+        #Scale V_start, V_stop
+        V_start_unscaled, V_start = V_start, V_start * self.scale
+        V_stop_unscaled, V_stop = V_stop, V_stop * self.scale
 
-    #     # Generate sweep voltages
-    #     voltages = []
+        # Generate sweep voltages
+        voltages = []
 
-    #     # Optionally add sweep from current gate voltage V0 to ramp start V_start
-    #     if max_ramp_rate:
-    #         t_ramp_start = abs(V_start - V0) / max_ramp_rate
-    #         num_start = int(np.ceil(t_ramp_start / dt)) + 1
-    #         voltages += list(np.linspace(V0, V_start, num_start))
+        # Optionally add sweep from current gate voltage V0 to ramp start V_start
+        if self.max_ramp_rate:
+            t_ramp_start = abs(V_start - V0) / self.max_ramp_rate
+            num_start = int(np.ceil(t_ramp_start / dt)) + 1
+            voltages += list(np.linspace(V0, V_start, num_start))
 
-    #     # Optionally add sweep that remains at V_start for delay_start
-    #     if delay_start:
-    #         num_delay_start = int(np.ceil(delay_start / dt))
-    #         voltages += list(np.repeat(V_start, num_delay_start))
+        # Optionally add sweep that remains at V_start for delay_start
+        if delay_start:
+            num_delay_start = int(np.ceil(delay_start / dt))
+            voltages += list(np.repeat(V_start, num_delay_start))
 
-    #     # Add ramp sweep
-    #     trigger_delay = len(voltages) * dt
-    #     voltages += list(np.linspace(V_start, V_stop, num))
+        # Add ramp sweep
+        trigger_delay = len(voltages) * dt
+        voltages += list(np.linspace(V_start, V_stop, num))
 
-    #     # Optionally add sweep from final gate voltage V_stop to original gate voltage
-    #     if max_ramp_rate:
-    #         t_ramp_stop = abs(V_stop - V0) / max_ramp_rate
-    #         num_stop = int(np.ceil(t_ramp_stop / dt)) + 1
-    #         voltages += list(np.linspace(V_stop, V0, num_stop))
-    #     else:
-    #         # Return to initial voltage
-    #         voltages += [V0]
-        
-    #     voltages = np.array(voltages)
-
-    #     # Ensure number of points does not exceed limit
-    #     assert len(voltages) < 1e5, f"Number of points {len(voltages)} exceeds limit 100000"
-
-    #     # Ensure all voltages are within allowed values
-    #     if self.v.vals is not None:
-    #         scale = self.v.scale or 1
-    #         V_min = getattr(self.v.vals, '_min_value', -10) * scale
-    #         V_max = getattr(self.v.vals, '_max_value', 10) * scale
-    #         V_min = max(V_min, -10)
-    #         V_max = min(V_max, 10)
-    #         assert np.all((V_min <= voltages) & (voltages <= V_max)), f"Voltages are out of range {V_min} <= voltages <= {V_max}"
-
-    #     # Optionally plot results
-    #     if plot:
-    #         fig, ax = plt.subplots(figsize=(10,4))
-    #         t_list = np.arange(len(voltages)) * dt
-    #         ax.plot(t_list, voltages)
-    #         ax.grid('on')
-
-    #         if trigger_channel:
-    #             ax_trigger = ax.twinx()
-    #             ax_trigger.plot(trigger_delay + np.array([0,0, .2e-3, .2e-3]), [0,5.5,5.5,0], color='r', alpha=0.5)
-
-    #     # Program QDac with list of voltages
-    #     qdac_channel = self.DAC
-    #     dc_list = qdac_channel.dc_list(repetitions=repetitions,voltages=voltages,dwell_s=dt)
-
-    #     # Optionally add trigger
-    #     if trigger_channel is not None:
-    #         qdac_channel.parent.free_all_triggers()
-    #         trigger = dc_list.start_marker()
-    #         trigger_channel.width_s(.2e-3)  # TODO shouldn't be hardcoded
-    #         trigger_channel.polarity('norm')
-    #         trigger_channel.delay_s(trigger_delay)
-    #         trigger_channel.source_from_trigger(trigger)
-
-    #     if not silent:
-    #         print(f'Number of points={len(voltages)}, duration={len(voltages)*dt*1e3:.3f} ms, dt={dt*1e6:.1f} us')
-    #         print(f'Voltage range: V_min={min(voltages):.3f}, V_max={max(voltages):.3f}, all within range [{V_min:.3f}, {V_max:.3f}]')
-
-    #     dc_list.start()
-
-    #     return dc_list
-
-    def ramp(self, V_start, V_stop, duration, trigger=True, num_points=2001, block=True):
-        V_start_scaled = V_start / self.scale
-        V_stop_scaled = V_stop / self.scale
-        sweep = self.qdac_channel.dc_sweep(
-            start_V=V_start_scaled,
-            stop_V=V_stop_scaled,
-            points=num_points,
-            repetitions=1,
-            dwell_s=duration / num_points,
-            stepped=False,
-            backwards=V_start > V_stop
-        )
-        if not self.silent:
-            print(f'Sweeping from {V_start_scaled} V to {V_stop_scaled} V in {duration} s')
-        if trigger:
-            trigger_object = sweep.start_marker()
-            self.trigger_channel.source_from_trigger(trigger_object)
+        # Optionally add sweep from final gate voltage V_stop to original gate voltage
+        if self.max_ramp_rate:
+            t_ramp_stop = abs(V_stop - V0) / self.max_ramp_rate
+            num_stop = int(np.ceil(t_ramp_stop / dt)) + 1
+            voltages += list(np.linspace(V_stop, V0, num_stop))
         else:
-            # triangle = self.qdac_channel.triangle_wave()
-            # trigger_object = triangle.period_start_marker()
-            self.qdac.free_all_triggers()
-            # self.trigger_channel.source_from_trigger(trigger_object)
-            self.trigger_channel.source_from_bus()
-            # self.qdac.free_all_triggers()
+            # Return to initial voltage
+            voltages += [V0]
+        
+        voltages = np.array(voltages)
 
-        sweep.start()
+        # Ensure number of points does not exceed limit
+        assert len(voltages) < 1e5, f"Number of points {len(voltages)} exceeds limit 100000"
+
+        # Ensure all voltages are within allowed values
+        if self.v.vals is not None:
+            scale = self.scale or 1
+            V_min = getattr(self.qdac_channel.v.vals, '_min_value', -10) * scale
+            V_max = getattr(self.qdac_channel.v.vals, '_max_value', 10) * scale
+            V_min = max(V_min, -10)
+            V_max = min(V_max, 10)
+            assert np.all((V_min <= voltages) & (voltages <= V_max)), f"Voltages are out of range {V_min} <= voltages <= {V_max}"
+
+        # Optionally plot results
+        if plot:
+            self.plot_ramp(voltages=voltages, dt=dt, trigger_delay=trigger_delay)
+            
+        # Program QDac with list of voltages
+        self.sweep = self.qdac_channel.dc_list(repetitions=repetitions,voltages=voltages,dwell_s=dt)
+
+        # Optionally add trigger
+        if self.trigger_channel is not None:
+            self.trigger_channel.width_s(self.trigger_width)
+            self.trigger_channel.polarity('norm')
+            self.qdac_channel.parent.free_all_triggers()
+            trigger = self.sweep.start_marker()
+            self.trigger_channel.delay_s(trigger_delay)
+            self.trigger_channel.source_from_trigger(trigger)
+
+        if not silent:
+            print(f'Number of points={len(voltages)}, duration={len(voltages)*dt*1e3:.3f} ms, dt={dt*1e6:.1f} us')
+            print(f'Voltage range: V_min={min(voltages):.3f}, V_max={max(voltages):.3f}, all within range [{V_min:.3f}, {V_max:.3f}]')
+
+        return self.sweep
+        
+    def plot_ramp(voltages, dt, trigger_delay=None):
+        fig, ax = plt.subplots(figsize=(10,4))
+        t_list = np.arange(len(voltages)) * dt
+        ax.plot(t_list, voltages)
+        ax.grid('on')
+
+        if trigger_delay is not None:
+            ax_trigger = ax.twinx()
+            ax_trigger.plot(trigger_delay + np.array([0,0, .2e-3, .2e-3]), [0,5.5,5.5,0], color='r', alpha=0.5)
+            
+        return fig, ax
+
+    def sweep(self, block=False):
+        self.sweep.start()
 
         if block:
-            while sweep.cycles_remaining():
+            while self.sweep.cycles_remaining():
                 time.sleep(5e-3)
-
-    def sweep(self, V_start, V_stop, duration):
-        slew_rate = get_slew_rate(self.qdac_channel)
-        V0 = self.qdac_channel.v() * self.scale
-
-        # Ramp to V_start
-        if slew_rate is not None:
-            self.ramp(
-                V_start=V0,
-                V_stop=V_start,
-                duration=abs(V_start - V0) / slew_rate,
-                trigger=False
-            )
-
-        # Ramp from V_start to V_stop
-        self.ramp(
-            V_start=V_start,
-            V_stop=V_stop,
-            duration=duration,
-            trigger=True
-        )
-
-        # Ramp to V_stop
-        if slew_rate is not None:
-            self.ramp(
-                V_start=V_stop,
-                V_stop=V0,
-                duration=abs(V0 - V_stop) / slew_rate,
-                trigger=False
-            )
-        else:
-            self.qdac.free_all_triggers()
-            self.trigger_channel.source_from_bus()
-            self.qdac_channel.v(V_stop)
 
 
 class GateScanRF():
@@ -236,9 +186,9 @@ class GateScanRF():
         num_points=251, 
         num_traces=1,
         duration=0.2, 
+        delay_start=None,
         V_start=None,
         V_stop=None,
-        V_scale=None,
         phase_shift=0,
         ):
         self.RF_lockin = RF_lockin
@@ -249,9 +199,9 @@ class GateScanRF():
         self.num_points = num_points
         self.num_traces = num_traces
         self.duration = duration
+        self.delay_start = delay_start
         self.V_start = V_start,
         self.V_stop = V_stop
-        self.V_scale = V_scale
         self.phase_shift = phase_shift
 
         self.acquisition_signals = []
@@ -289,10 +239,18 @@ class GateScanRF():
         self.daq.grid_cols(self.num_points)
         self.daq.grid_rows(self.num_traces)
 
-
-    def setup(self, num_points=None, num_traces=None, duration=None):
+    def setup(self, V_start=None, V_stop=None, num_points=None, num_traces=None, duration=None, delay_start=None):
         self.setup_RF_lockin(num_points=num_points, num_traces=num_traces, duration=duration)
-        self.sweeper.setup()
+        self.sweeper.setup(
+            V_start=V_start if V_start is not None else self.V_start, 
+            V_stop=V_stop if V_stop is not None else self.V_stop, 
+            duration=duration if duration is not None else self.duration, 
+            repetitions=num_traces if num_traces is not None else self.num_traces, 
+            delay_start=delay_start or self.delay_start, 
+            num=1001, 
+            plot=False, 
+            silent=True
+        )
 
     def start_RF_lockin_acquisition(self):
         self.daq._daq_module._set("endless", 0)
@@ -378,6 +336,36 @@ class GateScanRF():
 
         return results
 
+    def sweep(
+        self,
+        *voltages,
+        step=None,
+        num=None,
+        duration=None,
+        delay_start=None,
+        repetitions=1,
+        sweep=None,
+    ):
+        if len(voltages) == 0:
+            V_start, V_stop = self.V_start, self.V_stop
+        elif len(voltages) == 1:
+            V_start, V_stop = -voltages[0], voltages[0]
+        elif len(voltages) == 2:
+            V_start, V_stop = voltages
+        else:
+            raise ValueError('V_start, V_stop must be defined')
+
+        self.setup(
+            self, 
+            V_start=None, 
+            V_stop=None, 
+            num_points=None, 
+            num_traces=None, 
+            duration=None, 
+            delay_start=None
+        )
+        
+
     def plot_1D_results(self, results):
         fig, ax = plt.subplots()
         ax.plot(self.voltages, -results['x'])
@@ -406,10 +394,10 @@ class GateScanRF():
     def sweep_gate(
         self, 
         gate, 
-        V_start, 
-        V_stop, 
-        step=None, 
-        num=None, 
+        *voltages,
+        step=None,
+        num=251,
+        duration=0.2, 
         save_results=True, 
         silent=True
     ):
