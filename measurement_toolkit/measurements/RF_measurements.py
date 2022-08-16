@@ -80,6 +80,8 @@ class QDac2Sweeper():
         self.qdac = self.qdac_channel.parent
         self.silent = True
 
+        self.sweep_settings = None
+
         # Ensure we're using a QDAC2
         from qcodes_contrib_drivers.drivers.QDevil.QDAC2 import QDac2
         assert isinstance(self.qdac, QDac2), "gate DAC instrument must be a QDac-II"
@@ -88,9 +90,18 @@ class QDac2Sweeper():
         """Ramp QDAC-II gate voltage"""
         dt = duration / (num-1)
         assert dt > 2e-6 - 1e-9, f"Time step {dt*1e6:.1f}us must be >2us, please decrease 'num'"
+        
+        self.sweep_settings = {
+            'V_start': V_start,
+            'V_stop': V_stop,
+            'duration': duration,
+            'repetitions': repetitions,
+            'delay_start': delay_start,
+            'num': num
+        }
 
         # Record voltage before sweep
-        V0 = self()
+        V0 = self.qdac_channel.v() * self.scale
 
         #Scale V_start, V_stop
         V_start_unscaled, V_start = V_start, V_start * self.scale
@@ -131,7 +142,7 @@ class QDac2Sweeper():
         assert len(voltages) < 1e5, f"Number of points {len(voltages)} exceeds limit 100000"
 
         # Ensure all voltages are within allowed values
-        if self.v.vals is not None:
+        if self.qdac_channel.v.vals is not None:
             scale = self.scale or 1
             V_min = getattr(self.qdac_channel.v.vals, '_min_value', -10) * scale
             V_max = getattr(self.qdac_channel.v.vals, '_max_value', 10) * scale
@@ -144,14 +155,14 @@ class QDac2Sweeper():
             self.plot_ramp(voltages=voltages, dt=dt, trigger_delay=trigger_delay)
             
         # Program QDac with list of voltages
-        self.sweep = self.qdac_channel.dc_list(repetitions=repetitions,voltages=voltages,dwell_s=dt)
+        self.sweep_object = self.qdac_channel.dc_list(repetitions=repetitions,voltages=voltages,dwell_s=dt)
 
         # Optionally add trigger
         if self.trigger_channel is not None:
             self.trigger_channel.width_s(self.trigger_width)
             self.trigger_channel.polarity('norm')
             self.qdac_channel.parent.free_all_triggers()
-            trigger = self.sweep.start_marker()
+            trigger = self.sweep_object.start_marker()
             self.trigger_channel.delay_s(trigger_delay)
             self.trigger_channel.source_from_trigger(trigger)
 
@@ -159,9 +170,9 @@ class QDac2Sweeper():
             print(f'Number of points={len(voltages)}, duration={len(voltages)*dt*1e3:.3f} ms, dt={dt*1e6:.1f} us')
             print(f'Voltage range: V_min={min(voltages):.3f}, V_max={max(voltages):.3f}, all within range [{V_min:.3f}, {V_max:.3f}]')
 
-        return self.sweep
+        return self.sweep_object
         
-    def plot_ramp(voltages, dt, trigger_delay=None):
+    def plot_ramp(self,voltages, dt, trigger_delay=None):
         fig, ax = plt.subplots(figsize=(10,4))
         t_list = np.arange(len(voltages)) * dt
         ax.plot(t_list, voltages)
@@ -174,11 +185,15 @@ class QDac2Sweeper():
         return fig, ax
 
     def sweep(self, block=False):
-        self.sweep.start()
+        self.sweep_object.start()
 
         if block:
-            while self.sweep.cycles_remaining():
+            while self.sweep_object.cycles_remaining():
                 time.sleep(5e-3)
+
+    def disable_trigger(self):
+        trigger_id = int(self.trigger_channel.short_name[-1])
+        self.qdac.write(f'outp:trig{trigger_id}:sour hold')
 
 
 class GateScanRF():
@@ -186,15 +201,17 @@ class GateScanRF():
         self, 
         RF_lockin, 
         sweeper,
-        demodulator_name='demod0',
+        demodulator_idx=0,
         num_points=251, 
         t_int=1e-3,
         num_traces=1,
         phase_shift=0,
     ):
         self.RF_lockin = RF_lockin
-        self.daq = RF_lockin.daq
-        self.demodulator_name = demodulator_name
+        self.daq = RF_lockin.session.modules.daq
+        self.daq_raw = RF_lockin.session.modules.daq.raw_module
+        self.demodulator_idx = demodulator_idx
+        self.demodulator = RF_lockin.demods[demodulator_idx]
         self.sweeper = sweeper
 
         self.num_points = num_points
@@ -208,10 +225,13 @@ class GateScanRF():
 
     @property
     def sweep_values(self):
-        if self.V_start is None or self.V_stop is None or self.num_points is None:
-            return None
+        V_start = self.sweeper.sweep_settings.get('V_start', None)
+        V_stop = self.sweeper.sweep_settings.get('V_stop', None)
+        num = self.sweeper.sweep_settings.get('num', None)
+        if None not in [V_start, V_stop, num]:
+            return np.linspace(V_start, V_stop, num)
         else:
-            return np.linspace(self.V_start, self.V_stop, self.num_points)
+            return None
 
     @property
     def voltages(self):
@@ -225,48 +245,54 @@ class GateScanRF():
         if duration is not None:
             self.duration = duration
 
-        self.daq.signals_clear()
-        demod_x = self.daq.signals_add(self.demodulator_name, signal_type='X')
-        demod_y = self.daq.signals_add(self.demodulator_name, signal_type='Y')
-        self.acquisition_signals = [demod_x, demod_y]
+        self.daq_raw.unsubscribe('*')
+        self.acquisition_signals = [
+            (self.demodulator.sample.zi_node + '.x').lower(),
+            (self.demodulator.sample.zi_node + '.y').lower(),
+        ]
+        for signal in self.acquisition_signals:
+            self.daq_raw.subscribe(signal)
 
-        self.daq.trigger(self.demodulator_name, 'trigin3')
-        self.daq.type('hardware')  # Wait for trigger
-        self.daq.grid_mode('linear')
+        # self.daq.trigger(f'demods{self.demodulator_idx}', 'trigin3')
+        self.daq.triggernode(self.demodulator.sample.zi_node + '.TrigIn3')
+        # self.daq.type('hardware')  # Wait for trigger
+        self.daq.type(6) # 6 apparently means HW trigger  # TODO replace me back
+        self.daq.grid.mode('linear')
         self.daq.duration(self.duration)
-        self.daq.grid_cols(self.num_points)
-        self.daq.grid_rows(self.num_traces)
+        self.daq.grid.cols(self.num_points)
+        self.daq.grid.rows(self.num_traces)
 
-    def setup(self, V_start, V_stop, t_int, num_points, num_traces):
+    def setup(self, V_start, V_stop, t_int, num_points, num_traces, plot=False):
+        duration = t_int * num_points
+
         # Setup RF lockin
-        self.setup_RF_lockin(num_points=num_points, num_traces=num_traces, t_int=t_int)
+        self.setup_RF_lockin(num_points=num_points, num_traces=num_traces, duration=duration)
 
         # Setup QDac sweeper
-        duration = t_int * num_points
-        self.sweeper.setup(
+        self.sweeper.setup_ramp(
             V_start=V_start, 
             V_stop=V_stop, 
             duration=duration, 
             repetitions=num_traces, 
             num=max(1001, num_points), 
-            plot=False, 
+            plot=plot, 
             silent=True
         )
 
     def start_RF_lockin_acquisition(self):
-        self.daq._daq_module._set("endless", 0)
-        self.daq._daq_module._set("clearhistory", 1)
-        for path in self.daq.signals:
-            self.daq._daq_module._module.subscribe(path)
+        self.daq.endless(0)
+        self.daq.clearhistory(1)
+        # for path in self.acquisition_signals:
+        #     self.daq.subscribe(path)
             # print(f'subscribed to {path}')
-        self.daq._daq_module._module.execute()
+        self.daq_raw.execute()
 
     def wait_acquisition_complete(self, timeout=5, t_start=None, silent=True):
         if t_start is None:
             t_start = time.perf_counter()
 
         while time.perf_counter() - t_start < timeout:
-            if self.daq._daq_module._module.finished():
+            if self.daq_raw.finished():
                 if not silent:
                     print(f'Acquisition took {(time.perf_counter() - t_start) * 1e3:.0f} ms')
                 break
@@ -275,16 +301,16 @@ class GateScanRF():
             raise RuntimeError(f'Acquisition failed with timeout {timeout} s')
 
     def process_acquisition(self, simplify=True):
-        self._raw_results = self.daq._daq_module._module.read(flat=True)
-        self.daq._daq_module._module.finish()
-        self.daq._daq_module._module.unsubscribe("*")
-        self.daq._daq_module._get_result_from_dict(self._raw_results)
+        self._raw_results = self.daq_raw.read(flat=True)
+        self.daq_raw.finish()
+        self.daq_raw.unsubscribe("*")
+        # self.daq._daq_module._get_result_from_dict(self._raw_results)
         
         for key in self.acquisition_signals:
             result = self._raw_results[key][0]['value']
 
             if simplify:
-                key = key.split('.')[-2]
+                key = key.split('.')[-1]
 
             if self.num_traces == 1:
                 # Only use the first trace
@@ -299,21 +325,17 @@ class GateScanRF():
     def acquire(
         self, 
         save_results=True,
-        setup=True, 
         finalize=True, 
-        num_points=None, 
-        num_traces=None, 
-        duration=None, 
         delay=0.01
         ):
-        if setup:
-            self.setup(num_points=num_points, num_traces=num_traces, duration=duration)
 
+        # Start RF acquisition
         self.start_RF_lockin_acquisition()
         t_start = time.perf_counter()
         time.sleep(delay)
 
-        self.sweeper.sweep(V_start=self.V_start, V_stop=self.V_stop, duration=self.duration)
+        # Perform sweep
+        self.sweeper.sweep()
 
         if finalize:
             self.wait_acquisition_complete(timeout=5, t_start=t_start)
