@@ -24,6 +24,7 @@ def plot_data(
         xscale=True,
         yscale=True,
         transpose=False,
+        idxs=None,
         set_title=True,
         negative_clim=False,
         arr_modifier=None,
@@ -124,6 +125,8 @@ def plot_data(
                     array = array.real
                 if arr_modifier is not None:
                     array = arr_modifier(array)
+                if idxs is not None:
+                    array = array[idxs]
                         
                 # Plot data
                 array.plot(ax=ax, **plot_kwargs)
