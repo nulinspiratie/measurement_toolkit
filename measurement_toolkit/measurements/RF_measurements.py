@@ -86,7 +86,7 @@ class QDac2Sweeper():
         from qcodes_contrib_drivers.drivers.QDevil.QDAC2 import QDac2
         assert isinstance(self.qdac, QDac2), "gate DAC instrument must be a QDac-II"
 
-    def setup_ramp(self, V_start, V_stop, duration, repetitions=1, delay_start=None, num=1001, plot=False, silent=True):
+    def setup_ramp(self, V_start, V_stop, duration, repetitions=1, delay_start=None, num=4001, plot=False, silent=True):
         """Ramp QDAC-II gate voltage"""
         dt = duration / (num-1)
         assert dt > 2e-6 - 1e-9, f"Time step {dt*1e6:.1f}us must be >2us, please decrease 'num'"
@@ -189,7 +189,7 @@ class QDac2Sweeper():
 
         if block:
             while self.sweep_object.cycles_remaining():
-                time.sleep(5e-3)
+                time.sleep(10e-3)
 
     def disable_trigger(self):
         trigger_id = int(self.trigger_channel.short_name[-1])
@@ -222,12 +222,13 @@ class GateScanRF():
         self.acquisition_signals = []
         self.results = {}
         self._raw_results = None
+        self._t_acquisition_start = None
 
     @property
     def sweep_values(self):
         V_start = self.sweeper.sweep_settings.get('V_start', None)
         V_stop = self.sweeper.sweep_settings.get('V_stop', None)
-        num = self.sweeper.sweep_settings.get('num', None)
+        num = self.num_points
         if None not in [V_start, V_stop, num]:
             return np.linspace(V_start, V_stop, num)
         else:
@@ -273,8 +274,8 @@ class GateScanRF():
             V_start=V_start, 
             V_stop=V_stop, 
             duration=duration, 
-            repetitions=num_traces, 
-            num=max(1001, num_points), 
+            repetitions=1, 
+            num=max(4001, num_points), 
             plot=plot, 
             silent=True
         )
@@ -286,12 +287,15 @@ class GateScanRF():
         #     self.daq.subscribe(path)
             # print(f'subscribed to {path}')
         self.daq_raw.execute()
+        self._t_acquisition_start = time.perf_counter()
 
     def wait_acquisition_complete(self, timeout=5, t_start=None, silent=True):
         if t_start is None:
-            t_start = time.perf_counter()
+            t_start = self._t_acquisition_start
 
-        while time.perf_counter() - t_start < timeout:
+        t0 = time.perf_counter()
+
+        while time.perf_counter() - t0 < timeout:
             if self.daq_raw.finished():
                 if not silent:
                     print(f'Acquisition took {(time.perf_counter() - t_start) * 1e3:.0f} ms')
@@ -300,10 +304,10 @@ class GateScanRF():
         else:
             raise RuntimeError(f'Acquisition failed with timeout {timeout} s')
 
-    def process_acquisition(self, simplify=True):
+    def process_acquisition(self, simplify=True, remove_singleton=True):
         self._raw_results = self.daq_raw.read(flat=True)
         self.daq_raw.finish()
-        self.daq_raw.unsubscribe("*")
+        # self.daq_raw.unsubscribe("*")  # TODO is this needed?
         # self.daq._daq_module._get_result_from_dict(self._raw_results)
         
         for key in self.acquisition_signals:
@@ -312,7 +316,7 @@ class GateScanRF():
             if simplify:
                 key = key.split('.')[-1]
 
-            if self.num_traces == 1:
+            if self.num_traces == 1 and remove_singleton:
                 # Only use the first trace
                 result = result[0]
             
@@ -326,24 +330,34 @@ class GateScanRF():
         self, 
         save_results=True,
         finalize=True, 
-        delay=0.01
+        delay=0.01,
+        silent=True
         ):
 
         # Start RF acquisition
         self.start_RF_lockin_acquisition()
-        t_start = time.perf_counter()
+        if not silent:
+            print('Started RF acquisition')
         time.sleep(delay)
 
         # Perform sweep
+        # for k in range(3):
         self.sweeper.sweep()
+        if not silent:
+            print('Performed gate sweep')
+            # time.sleep(0.3)
 
         if finalize:
-            self.wait_acquisition_complete(timeout=5, t_start=t_start)
+            self.wait_acquisition_complete(timeout=5, silent=silent)
             results = self.process_acquisition()
         else:
             results = None
 
         if save_results:
+            # if 
+            # with MeasurementLoop('1D:{self.sweeper.name}_scan_RF') as msmt:
+            #     for k in Sweep
+
             setpoints_gate = Parameter(
                 self.sweeper.name, unit='V', get_cmd=partial(getattr, self, 'voltages'),
                 vals=Arrays(shape=(self.num_points, ))
@@ -366,12 +380,12 @@ class GateScanRF():
         num=None,
         t_int=None,
         duration=None,
-        delay_start=None,
         repetitions=1,
         sweep=None,
         setup=True,
         execute=True,
-        silent=True
+        silent=True,
+        plot=False
     ):
         assert repetitions == 1, "Multiple repetitions not yet implemented"
 
@@ -405,41 +419,93 @@ class GateScanRF():
             num_traces = repetitions
 
         # Ensure we always have an iterable to sweep over
-        if sweep is not None:
+        if sweep is None:
             sweep = [None]
+
 
         # Setup QDac and RF lockin
         if setup:
             self.setup(
-                self, 
                 V_start=V_start, 
                 V_stop=V_stop, 
                 t_int=t_int, 
                 num_points=num, 
-                num_traces=num_traces, 
-                repetitions=repetitions,
+                num_traces=num_traces
             )
 
         # Perform measurement        
         if execute:
-            with MeasurementLoop('RF_measurement') as msmt:
-                self.start_RF_lockin_acquisition()
-                t0 = time.perf_counter()
+            self.start_RF_lockin_acquisition()
+            time.sleep(0.05)
 
-                for val in sweep:
-                    self.sweeper.sweep()
+            for val in sweep.sequence:
+                sweep.parameter(val)
+                if sweep.delay:
+                    sleep(sweep.delay)
 
-                    if not silent:
-                        clear_output()
-                        print(f'Finished trace: {self.daq._daq_module._module.finished()} ({self.daq._daq_module._module.progress()[0]*100:.1f}%)')
+                self.sweeper.sweep(block=True)
 
-                    self.wait_acquisition_complete(silent=silent)
-                    results = self.process_acquisition()
-                    signal = results['phase_shifted']
+                if not silent:
+                    # clear_output()
+                    print(f'Finished trace: {self.daq_raw.finished()} ({self.daq_raw.progress()[0]*100:.1f}%)')
 
-                    for k, V in enumerate(Sweep(self.voltages, name=self.sweeper.name, unit='V')):
-                        msmt.measure(np.real(signal[k]), 'RF_signal_I', unit='V')
-                        msmt.measure(np.imag(signal[k]), 'RF_signal_Q', unit='V')
+            self.wait_acquisition_complete(silent=silent)
+            results = self.process_acquisition(remove_singleton=False)
+
+            # Store data
+            setpoints_slow_gate = Parameter(
+                sweep.parameter.name, label=sweep.parameter.name, unit='V', 
+                get_cmd=lambda: sweep.sequence,
+                vals=Arrays(shape=(len(sweep), ))
+            )
+            setpoints_fast_gate = Parameter(
+                self.sweeper.name, unit='V', get_cmd=partial(getattr, self, 'voltages'),
+                vals=Arrays(shape=(self.num_points,))
+            )
+            measure_parameter = ParameterWithSetpoints(
+                'RF_signal', 
+                unit='V', 
+                setpoints=(setpoints_slow_gate, setpoints_fast_gate),
+                vals=Arrays(shape=(len(sweep), self.num_points), valid_types=(np.complex, np.float)),
+                get_cmd=lambda: results['phase_shifted']
+            )
+            data_qcodes, _, _ = do0d(measure_parameter, measurement_name=f'2D:{sweep.parameter.name}_{self.sweeper.name}_scan_RF')
+            data = data_qcodes.to_xarray_dataset()
+
+            # with MeasurementLoop('RF_measurement') as msmt:
+            #     self.start_RF_lockin_acquisition()
+            #     time.sleep(0.05)
+
+            #     for val in sweep:
+            #         self.sweeper.sweep(block=True)
+
+            #         if not silent:
+            #             # clear_output()
+            #             print(f'Finished trace: {self.daq_raw.finished()} ({self.daq_raw.progress()[0]*100:.1f}%)')
+
+            #     self.wait_acquisition_complete(silent=silent)
+            #     results = self.process_acquisition(remove_singleton=False)
+            #     signal = results['phase_shifted']
+
+            #     fake_sweep = Sweep(sweep.sequence, name='bla') if isinstance(sweep, Sweep) else [None]
+            #     for k, _ in enumerate(fake_sweep):
+            #         for kk, V in enumerate(Sweep(self.voltages, name=self.sweeper.name, unit='V')):
+            #             msmt.measure(np.real(signal[k,kk]), 'RF_signal_I', unit='V')
+            #             msmt.measure(np.imag(signal[k,kk]), 'RF_signal_Q', unit='V')
+                
+            if not silent:
+                print(f'Finished trace: {self.daq_raw.finished()} ({self.daq_raw.progress()[0]*100:.1f}%)')
+
+            if plot:
+                fig, axes = plt.subplots(1, 2, figsize=(14,5))
+                arr = data.RF_signal.transpose()
+                ax = axes[0]
+                np.real(arr).plot(ax=ax)
+                ax = axes[1]
+                np.imag(arr).plot(ax=ax)
+                fig.tight_layout()
+
+            return data
 
     def plot_1D_results(self, results):
         fig, ax = plt.subplots()
