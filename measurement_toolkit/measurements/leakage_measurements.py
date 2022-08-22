@@ -177,7 +177,7 @@ def measure_gate_leakages(
     measurement_name="gate_leakage_matrix",
     current_limit=5e-9,
     delay=100e-3,
-    verbose=False,
+    verbose=True,
 ):
     # Ensure all voltages are within range
     for gate in gates:
