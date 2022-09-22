@@ -24,11 +24,13 @@ def plot_data(
         xscale=True,
         yscale=True,
         transpose=False,
+        idxs=None,
         set_title=True,
         negative_clim=False,
         arr_modifier=None,
         swap_dims=None,
         print_summary=True,
+        diverging_cmap=True,
         **plot_kwargs
 ):
 
@@ -119,11 +121,13 @@ def plot_data(
                 array = dataset.data_vars[array_label]
                 if array.ndim == 2 and transpose:
                     array = array.transpose()
+                if arr_modifier is not None:
+                    array = arr_modifier(array)
                 if np.iscomplexobj(array):
                     print('Array is complex, plotting real part')
                     array = array.real
-                if arr_modifier is not None:
-                    array = arr_modifier(array)
+                if idxs is not None:
+                    array = array[idxs]
                         
                 # Plot data
                 array.plot(ax=ax, **plot_kwargs)
@@ -136,7 +140,7 @@ def plot_data(
 
             # Apply modifications for 2d colorplots
             is_2d = any(isinstance(child, QuadMesh) for child in ax.get_children())
-            if is_2d:
+            if is_2d and diverging_cmap: 
                 try:  # Wrap in try/except because it's still experimental
                     # Optionally modify clim
                     if clim is not None:
@@ -180,10 +184,9 @@ def plot_data(
 # Deprecated
 plot_ds = plot_data
 
-import imageio
-
 
 def create_animation(filename, figs, fps=1):
+    import imageio
     filepath = Path(filename)
     filepath = filepath.with_suffix('.gif')
     # if not path.is_absolute():
@@ -196,7 +199,9 @@ def create_animation(filename, figs, fps=1):
         image = np.frombuffer(fig.canvas.tostring_rgb(), dtype='uint8')
         image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
         images.append(image)
-    imageio.mimsave(str(filepath), images, fps=1)
+    imageio.mimsave(str(filepath), images, fps=fps)
+
+    print(f'Created animation with {len(images)} frames at {filename}')
 
 
 def plot_dual_axis(dataset, reverse=False, axes=None, figsize=None):
