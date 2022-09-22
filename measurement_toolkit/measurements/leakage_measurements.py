@@ -2,7 +2,6 @@ from cgitb import reset
 from time import sleep
 import sys
 import numpy as np
-from qcodes.dataset.measurement_loop import MeasurementLoop, Sweep, RepetitionSweep
 from qcodes.utils.dataset.doNd import ArraySweep
 
 """
@@ -98,6 +97,7 @@ def measure_gate_leakage(
     Sweep a gate and check if it starts leaking.
     Ramps back at the end.
     """
+    from qcodes.dataset.measurement_loop import MeasurementLoop, Sweep, RepetitionSweep
     if measure_current_function is None:
         measure_current_function = gate.i
 
