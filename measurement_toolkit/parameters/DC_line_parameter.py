@@ -161,6 +161,8 @@ class DCLine(Parameter):
         self.verify_no_leakage = verify_no_leakage
         self.lockin_out = None if pd.isna(lockin_out) else int(lockin_out)
         self.lockin_in = None if pd.isna(lockin_in) else int(lockin_in)
+        self._V_min = V_min
+        self._V_max = V_max
 
         if self.line_type == 'ohmic':
             self.line_resistance = line_resistance
@@ -176,10 +178,14 @@ class DCLine(Parameter):
             self.breakout_box, self.breakout_idx = convert_DC_line_to_breakout(self.DC_line)
         self.breakout_idxs = [convert_DC_line_to_breakout(DC_line) for DC_line in self.DC_lines]
 
-        # Attach QDac controls if there is a connected QDac
-        if self.DAC_channel is not None:
-            self.DAC, self.V, self.I = self.attach_QDac(V_min, V_max, self.voltage_scale)
-            self.v, self.i = self.V, self.I  # Add deprecated lowercase params
+        # QDac-specific attributes that are set once DCLine.attach_QDac is called
+        self.DAC = None
+        self.V = None
+        self.I = None
+        # Deprecated parameters
+        self.v = self.V
+        self.i = self.I
+
         # Attach lockin controls if there are connected lockins
         if self.lockin_out is not None:
             # Attach AC excitation parameter line.V_AC
@@ -214,17 +220,8 @@ class DCLine(Parameter):
             
         return repr_str
 
-    def attach_QDac(self, V_min, V_max, voltage_scale):
-        qdacs = [
-            val for key, val in qc.Instrument._all_instruments.items() 
-            if key.startswith('qdac')
-        ]
-        if not qdacs:
-            return None, None, None
-        elif len(qdacs) > 1:
-            warnings.warn(f'Found {len(qdacs)} instead of 1. Using first qdac')
-        qdac = qdacs[0]
-
+    def attach_QDac(self, qdac, V_min, V_max, voltage_scale):
+        self._instrument = qdac
         channel = qdac.channels[self.DAC_channel - 1]
 
         # Set voltage limits
@@ -246,6 +243,14 @@ class DCLine(Parameter):
             get_cmd=get_DAC_current,
             set_cmd=channel.i
         )
+
+        self.DAC = channel
+        self.V = channel.v
+        self.I = current_parameter
+        self._instrument = qdac
+        # Deprecated parameters
+        self.v = self.V
+        self.i = self.I
 
         return channel, channel.v, current_parameter
 

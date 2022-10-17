@@ -10,7 +10,7 @@ from measurement_toolkit.measurements.DC_measurements import bias_scan
 
 def initialize_DC_lines(
     gates_excel_file, 
-    attach_to_qdac=False, 
+    qdac=None, 
     namespace=None,
     update_monitor=True,
     parameter_container=None
@@ -48,16 +48,14 @@ def initialize_DC_lines(
     station.gates = DC_line_groups['gates']
     station.ohmics = DC_line_groups['ohmics']
 
-    # Perform these operations if the station contains relevant DAC instruments
-    if attach_to_qdac:
-        for instrument_name, instrument in station.components.items():
-            if not instrument_name.startswith('qdac'):
+    # Perform these operations if qdac is passed
+    if qdac is not None:
+        for name, line in lines.items():
+            if not line.DAC_channel:
                 continue
-
-            # Add all lines to QDac
-            for name, line in lines.items():
-                instrument.parameters[name] = line
-                line._instrument = instrument
+            
+            line.attach_QDac(qdac, line._V_min, line._V_max, line.voltage_scale)
+            qdac.parameters[name] = line
 
     # Add to monitor
     if update_monitor:
@@ -75,7 +73,7 @@ def initialize_DC_lines(
     # Update function showing gate voltages
     if parameter_container is not None:
         for gate in DC_line_groups['lines'].values():
-            if hasattr(gate, 'DAC'):
+            if getattr(gate, 'DAC', None) is not None:
                 parameter_container.add_parameter(
                     gate, 
                     formatter='.5g', 

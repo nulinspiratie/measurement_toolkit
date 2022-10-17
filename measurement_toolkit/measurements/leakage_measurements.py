@@ -179,6 +179,8 @@ def measure_gate_leakages(
     delay=100e-3,
     verbose=True,
 ):
+    from qcodes.dataset.measurement_loop import MeasurementLoop, Sweep, RepetitionSweep
+    
     # Ensure all voltages are within range
     for gate in gates:
         assert np.min(voltages) > gate.v.vals._min_value
