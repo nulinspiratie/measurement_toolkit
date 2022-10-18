@@ -157,7 +157,6 @@ class DCLine(Parameter):
         self.voltage_scale = 1 if (pd.isna(voltage_scale) or voltage_scale is None) else voltage_scale
         self.AC_line = None if pd.isna(AC_line) else int(AC_line)
         self.RF_line = None if pd.isna(RF_line) else RF_line
-        self.DAC_channel = None if pd.isna(DAC_channel) else int(DAC_channel)
         self.skip = None if pd.isna(skip) else bool(skip)
         self.leakage = None if pd.isna(leakage) else bool(leakage)
         self.notes = notes
@@ -182,13 +181,34 @@ class DCLine(Parameter):
             self.breakout_box, self.breakout_idx = convert_DC_line_to_breakout(self.DC_line)
         self.breakout_idxs = [convert_DC_line_to_breakout(DC_line) for DC_line in self.DC_lines]
 
-        # QDac-specific attributes that are set once DCLine.attach_QDac is called
+        # Set QDac DAC channel
+        if pd.isna(DAC_channel):
+            self.DAC_channel = None
+            qdac_idx = None
+        elif isinstance(DAC_channel, (float, int)): 
+            self.DAC_channel = int(DAC_channel)
+            qdac_idx = None
+        elif isinstance(DAC_channel, str) and ',' in DAC_channel:
+            qdac_idx, DAC_channel = DAC_channel.split(',')
+            self.DAC_channel = int(DAC_channel)
+
+        # Attach qdac
+        station = qc.Station.default
         self.DAC = None
-        self.V = None
-        self.I = None
-        # Deprecated parameters
-        self.v = self.V
-        self.i = self.I
+        self.V = self.v = None
+        self.I = self.i = None
+
+        if getattr(station, 'instruments_loaded', False) and self.DAC_channel:
+            qdac_name = 'qdac' if qdac_idx is None else f'qdac{qdac_idx}'
+            qdac = self._instrument = getattr(station, qdac_name, None)
+
+            if qdac is not None:
+                self.DAC, self.V, self.I = self.attach_QDac(
+                    qdac, self._V_min, self._V_max, self.voltage_scale
+                )
+                qdac.parameters[name] = self
+            else:
+                warnings.warn(f'Could not attach {qdac_name} to {name}')
 
         # Attach lockin controls if there are connected lockins
         if self.lockin_out is not None:
@@ -225,7 +245,6 @@ class DCLine(Parameter):
         return repr_str
 
     def attach_QDac(self, qdac, V_min, V_max, voltage_scale):
-        self._instrument = qdac
         channel = qdac.channels[self.DAC_channel - 1]
 
         # Set voltage limits

@@ -2,9 +2,10 @@ from .parameters import *
 from .tools import *
 from .measurements import *
 from .code_injections import *
+import qcodes as qc
 
 
-__all__ = []
+__all__ = ['qc']
 from . import parameters, measurements, tools, code_injections
 __all__ += parameters.__all__
 __all__ += measurements.__all__
@@ -29,7 +30,16 @@ if shell is not None:
             start_all_logging()
         
         # Initialize station
-        import qcodes as qc
-        station = qc.Station.default or qc.Station()
+        from pathlib import Path
+        if qc.Station.default is not None:
+            station = qc.Station.default
+        elif 'station_file' in qc.config.user and Path(qc.config.user.station_file).exists():
+            from qcodes.station import ValidationWarning
+            import warnings
+            warnings.simplefilter('ignore', category=ValidationWarning)
+            station = qc.Station(config_file=qc.config.user.station_file)
+        else:
+            print('creating new station')
+            station = qc.Station()
         station.instruments_loaded = getattr(station, 'instruments_loaded', False)
         shell.user_ns.setdefault('station', station)

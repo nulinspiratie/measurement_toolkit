@@ -103,9 +103,9 @@ def _initialize_parameter_containers(populate_namespace=True, add_to_station=Tru
     station = qc.Station.default
     if add_to_station and station is not None:
         if hasattr(station, 'gate_voltages'):
-            station.remove_component(station.gate_voltages)
+            station.remove_component('gate_voltages')
         if hasattr(station, 'system_summary'):
-            station.remove_component(station.system_summary)
+            station.remove_component('system_summary')
         station.add_component(gate_voltages)
         station.add_component(system_summary)
     
@@ -127,7 +127,8 @@ def initialize_config(
     use_mainfolder=True, 
     silent=False, 
     update_plottr=False,
-    show_device=True
+    show_device=True,
+    populate_namespace=True
 ):
     """Initializes the config from a template config
 
@@ -155,6 +156,7 @@ def initialize_config(
       "user.mainfolder" that points to the main folder
     """
     config = qc.config
+    station = qc.Station.default
 
     # Load config
     if use_mainfolder:
@@ -176,16 +178,6 @@ def initialize_config(
             label = key.split('_format')[0]
             config.user[label] = val.format(**config.user)
 
-    # Load station config
-    station = qc.Station.default
-    if station is not None and 'station_file' in config.user:
-        if config.user.station_file not in station.config_file:
-            from qcodes.station import ValidationWarning
-            warnings.simplefilter('ignore', category=ValidationWarning)
-            station.config_file.append(config.user.station_file)
-            station.load_config_files(config.user.station_file)
-    
-
     # Initialize database
     if 'db_location_format' in config.core:
         database = load_database_from_config(create_db=create_db)
@@ -194,7 +186,7 @@ def initialize_config(
         database = initialise_database()
 
     # Load experiment
-    exp = load_or_create_experiment(
+    experiment = load_or_create_experiment(
         experiment_name=config.user.experiment_name,
         sample_name=config.user.sample_name
     )
@@ -209,7 +201,7 @@ def initialize_config(
 
     # Initialize system_summary and gate_voltages ParameterContainers
     gate_voltages, system_summary = _initialize_parameter_containers(
-        populate_namespace=True,
+        populate_namespace=populate_namespace,
         add_to_station=True
     )
 
@@ -217,7 +209,8 @@ def initialize_config(
     if 'gates_file' in config.user:
         initialize_DC_lines(
             gates_excel_file=config.user.gates_file,
-            parameter_container=gate_voltages
+            parameter_container=gate_voltages,
+            populate_namespace=populate_namespace
         )
     
     # Create conductance parameters
@@ -242,3 +235,11 @@ def initialize_config(
             show_image(device_image_filepath.with_suffix('.png'))
         elif device_image_filepath.with_suffix('.pdf').exists():
             show_image(device_image_filepath.with_suffix('.pdf'))
+    
+    if populate_namespace:
+        from IPython import get_ipython
+        shell = get_ipython()
+        if shell is not None:
+            shell.user_ns['conductance_parameters'] = station.conductance_parameters
+            shell.user_ns['database'] = database
+            shell.user_ns['experiment'] = experiment
