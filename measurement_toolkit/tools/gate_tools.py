@@ -12,7 +12,6 @@ from measurement_toolkit.measurements.DC_measurements import bias_scan
 __all__ = [
     'iterate_gates',
     'initialize_DC_lines',
-    'configure_DC_bias_line',
     'combine_gates',
     'check_gate_leakages'
 ]
@@ -127,42 +126,6 @@ def initialize_DC_lines(
                 )
 
     return DC_line_groups
-
-
-def configure_DC_bias_line(voltage_parameter, scale=1e3, update_monitor=True): 
-    station = qc.Station.default or qc.Station()
-
-    V_bias = qc.DelegateParameter(
-        'V_bias',
-        source=voltage_parameter,
-        scale=scale,
-        vals=vals.Numbers(-1.1e-3, 1.1e-3),
-        unit='V'
-    )
-    # Add method to update ohmics
-    def update_ohmics(V_bias, *ohmics):
-        V_bias.ohmics = ohmics
-        ohmics_str = '&'.join([f'{station.ohmics[ohmic].name}:DC{ohmic}' for ohmic in ohmics])
-        V_bias.label = f"{ohmics_str} bias voltage"
-    V_bias.update_ohmics = partial(update_ohmics, V_bias)
-
-    # Add to Station
-    try:
-        station.remove_component('V_bias')
-    except KeyError:
-        pass
-    station.add_component(V_bias, 'V_bias')
-
-    V_bias.sweep = partial(bias_scan, V_bias=V_bias)
-
-    # Remove any pre-existing parameter
-    if update_monitor:
-        for param in station._monitor_parameters.copy():
-            if param.name == 'V_bias':
-                station._monitor_parameters.remove(param)
-        station._monitor_parameters.insert(0, V_bias)
-
-    return V_bias
 
 
 def combine_gates(
