@@ -1,6 +1,6 @@
 from .parameters import *
-from .measurements import *
 from .tools import *
+from .measurements import *
 from .code_injections import *
 
 
@@ -23,7 +23,10 @@ if shell is not None:
 
         # Start logging all input / output
         from qcodes.logger import start_all_logging
-        start_all_logging()
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()):
+            start_all_logging()
         
         # Initialize station
         import qcodes as qc

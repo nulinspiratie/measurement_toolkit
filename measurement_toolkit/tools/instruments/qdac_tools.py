@@ -11,7 +11,6 @@ from qcodes.utils import validators as vals
 
 __all__ = [
     'ramp_voltages_zero',
-    'ramp_voltages',
     'configure_qdac',
     'configure_qdac2'
 ]

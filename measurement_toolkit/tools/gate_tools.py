@@ -6,7 +6,6 @@ import qcodes as qc
 from qcodes.utils import validators as vals
 
 from measurement_toolkit.parameters import DCLine, CombinedParameter
-from measurement_toolkit.measurements.DC_measurements import bias_scan
 
 
 __all__ = [
@@ -49,7 +48,8 @@ def initialize_DC_lines(
     qdac=None, 
     populate_namespace=True,
     update_monitor=True,
-    parameter_container=None
+    parameter_container=None,
+    silent=False
 ):
     gates_table = pd.read_excel(gates_excel_file, skiprows=[0])
     
@@ -77,10 +77,10 @@ def initialize_DC_lines(
     # Populate namespace
     if populate_namespace:
         from IPython import get_ipython
-        shell = get_ipython
+        shell = get_ipython()
         if shell is not None:
             # Remove any pre-existing DC lines from namespace
-            if hasattr(station, lines):
+            if hasattr(station, 'lines'):
                 for line in station.lines:
                     shell.user_ns.pop(line, None)
 
@@ -124,6 +124,10 @@ def initialize_DC_lines(
                     comment=f'DC{gate.DC_line}', 
                     value_lower_bound=1e-5
                 )
+
+    # Print number of gates and ohmics
+    if not silent:
+        print(f'Number of gates: {len(DC_line_groups["gates"])}, ohmics: {len(DC_line_groups["ohmics"])}')
 
     return DC_line_groups
 

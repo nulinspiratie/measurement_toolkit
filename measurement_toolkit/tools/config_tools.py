@@ -5,8 +5,6 @@ import warnings
 from functools import partial
 
 from measurement_toolkit.tools.plot_tools import show_image
-from measurement_toolkit.parameters import create_conductance_parameters
-from measurement_toolkit.tools import ParameterContainer
 from measurement_toolkit.tools.gate_tools import initialize_DC_lines
 from measurement_toolkit.tools.data_tools import retrieve_station_component
 
@@ -88,6 +86,7 @@ def load_database_from_config(create_db=False):
 
 
 def _initialize_parameter_containers(populate_namespace=True, add_to_station=True):
+    from measurement_toolkit.tools import ParameterContainer
     gate_voltages = ParameterContainer('gate_voltages')
     def _call_gate_voltages(dataset, **kwargs):
         try:
@@ -103,6 +102,10 @@ def _initialize_parameter_containers(populate_namespace=True, add_to_station=Tru
 
     station = qc.Station.default
     if add_to_station and station is not None:
+        if hasattr(station, 'gate_voltages'):
+            station.remove_component(station.gate_voltages)
+        if hasattr(station, 'system_summary'):
+            station.remove_component(station.system_summary)
         station.add_component(gate_voltages)
         station.add_component(system_summary)
     
@@ -177,6 +180,8 @@ def initialize_config(
     station = qc.Station.default
     if station is not None and 'station_file' in config.user:
         if config.user.station_file not in station.config_file:
+            from qcodes.station import ValidationWarning
+            warnings.simplefilter('ignore', category=ValidationWarning)
             station.config_file.append(config.user.station_file)
             station.load_config_files(config.user.station_file)
     
@@ -216,8 +221,10 @@ def initialize_config(
         )
     
     # Create conductance parameters
-    station.conductance_parameters = create_conductance_parameters(station.ohmics)
-    station.measure_params = station.conductance_parameters
+    if getattr(station, 'instruments_loaded', False):
+        from measurement_toolkit.parameters import create_conductance_parameters
+        station.conductance_parameters = create_conductance_parameters(station.ohmics)
+        station.measure_params = station.conductance_parameters
 
     # Update plottr database
     if update_plottr:
