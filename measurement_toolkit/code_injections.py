@@ -8,6 +8,9 @@ from matplotlib.colors import LogNorm, SymLogNorm
 from measurement_toolkit.tools.plot_tools import create_diverging_cmap
 
 
+__all__ = ['perform_code_injections']
+
+
 def get_lim(ax, above_zero=False):
     min_val = None
     max_val = None

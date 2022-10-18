@@ -12,11 +12,12 @@ from qcodes.utils import validators as vals
 __all__ = [
     'ramp_voltages_zero',
     'ramp_voltages',
-    'combine_gates',
-    'check_leakages'
+    'configure_qdac',
+    'configure_qdac2'
 ]
 
 def ramp_voltages_zero():
+    """Ramps voltages to zero of all qdacs"""
     # QDac should be accessible from Station
     for instrument_name, instrument in qc.Station.default.components.items():
         if not instrument_name.startswith('qdac'):
@@ -59,10 +60,12 @@ def ramp_voltages(target_voltages, other_gates_zero=True, silent=True):
             ch.v(target_voltage)
 
 
-def qdac_gate_voltages(show_zero=False):
+def qdac_gate_voltages(qdac=None, show_zero=False):
     # QDac should be accessible from Station
     station = qc.Station.default
-    qdac = station.qdac
+
+    if qdac is None:
+        qdac = station.qdac
 
     qdac_nonzero_voltages = {ch.id: round(ch.v(), 5) for ch in qdac.channels if abs(ch.v()) > 1e-4}
 
@@ -79,58 +82,6 @@ def qdac_gate_voltages(show_zero=False):
     if qdac_nonzero_voltages:
         print("QDac has nonzero voltages that don't belong to a gate:", qdac_nonzero_voltages)
     return voltages
-
-
-def combine_gates(
-        *gates,
-        max_difference=2e-3,
-        precision=3,
-        scales=None,
-        offsets=None
-):
-    station = qc.Station.default
-
-    assert len(set(gates)) == len(gates), f"{gates=} have duplicates"
-    
-    combined_gates = []
-    for gate in gates:
-        if isinstance(gate, int):
-            combine_gates.append(station.gates[gate])
-        else:
-            combined_gates.append(gate)
-
-    name = 'gate_' + '_'.join(f'DC{gate.DC_line}' for gate in gates)
-    # label = ' & '.join(f'{gate.name}:DC{gate.DC_line}' for gate in combined_gates)
-
-    parameter = CombinedParameter(
-        name=name,
-        # label=label,
-        parameters=[gate for gate in combined_gates],
-        unit='V',
-        max_difference=max_difference,
-        precision=precision,
-        scales=scales,
-        offsets=offsets
-    )
-    parameter.sweep_to = partial(sweep_gate_to, parameter)
-    return parameter
-
-
-def check_leakages(current_limit=3e-9):
-    global gates
-    leaking_gates = {}
-    for gate in gates.values():
-        if hasattr(gate, 'i'):
-            current = gate.i()
-
-            if current > current_limit:
-                leaking_gates[gate] = current
-
-    if leaking_gates:
-        for gate, current in leaking_gates.items():
-            print(f'{current * 1e9:.0f} nA leakage from gate {gate}')
-    else:
-        print('No gate leakage')
 
 
 def configure_qdac(qdac, set_vhigh_ilow=False, inter_delay=30e-3, step=10e-3):
@@ -193,86 +144,3 @@ def configure_qdac2(qdac, inter_delay=30e-3, step=10e-3):
                 f'QDac channel {ch_id:02} not set to low current measurement mode.'
                 f'When at 0V, run: qdac.ch{ch_id:02}.measurement_range("low")'\
             )
-
-
-
-### In progress
-def load_qdac_snapshot_voltages(dataset, qdac_snapshot):
-    voltages = {}
-
-    for key, value in qdac_snapshot['parameters'].items():
-        if not key.startswith('V'):
-            continue
-        elif value['value'] is None or abs(value['value']) < 1e-4:
-            continue
-        elif f'qdac_{key}' in dataset.paramspecs:
-            # Gate is being swept
-            continue
-
-        voltages[key] = value['value']
-    return voltages
-
-def load_qdac2_snapshot_voltages(dataset, qdac_snapshot):
-    return {}
-
-def gate_voltages(dataset=None, silent=False, pretty=False):
-    voltages = {}
-
-    if dataset is not None:
-        if isinstance(dataset, numbers.Integral):
-            dataset = load_by_run_spec(captured_run_id=dataset)
-        for instrument_name, instrument_snapshot in dataset.snapshot['station']['instruments'].items():
-            if instrument_snapshot['__class__'] == 'qcodes.instrument_drivers.QDevil.QDevil_QDAC.QDac':
-                voltages.update(load_qdac_snapshot_voltages(dataset, instrument_snapshot))
-            elif instrument_snapshot['__class__'] == 'qcodes_contrib_drivers.drivers.QDevil.QDAC2.QDac2':
-                # voltages.update(load_qdac2_snapshot_voltages(dataset, instrument_snapshot))
-                voltages.update(load_qdac_snapshot_voltages(dataset, instrument_snapshot))
-                # return instrument_snapshot
-        V_bias = np.NaN
-    else:
-        station = qc.Station.default
-        V_threshold = 1e-4
-
-        for DC_line, gate in station.gates.items():
-            if not hasattr(gate, 'v'):
-                continue
-
-            voltage = gate()
-            if abs(voltage) > V_threshold:
-                voltages[gate] = voltage
-
-        V_bias = station.V_bias()
-
-    if silent:
-        return voltages
-    else:
-        if voltages:
-            station = qc.Station.default
-            # Determine maximum length
-            max_length = max(len(f'{V:.3g}') for V in voltages.values())
-            for gate, voltage in voltages.items():
-                if isinstance(gate, str):
-                    gate = next(g for g in station.gates.values() if g.name == gate)
-
-                if not pretty:
-                    unformatted_str = f"{{:}}({{:{max_length}.3g}})  # DC{{:}}"
-                else:
-                    unformatted_str = f"{{:}} = {{:.3g}} (DC{{:}})"
-                formatted_str = unformatted_str.format(gate.name, voltage, gate.DC_line)
-                print(formatted_str)
-
-        if not np.isnan(V_bias):
-            print(f'V_bias({V_bias:.4g})')
-
-
-
-
-def get_dataset_voltages(dataset, print_nonzero=True):
-    qdac_snapshot = dataset.snapshot['station']['instruments']['qdac']['parameters']
-    gates = {key: val['value'] for key, val in qdac_snapshot.items() if key.startswith('V_')}
-    if print_nonzero:
-        for key, val in gates.items():
-            if abs(val) > 0.001:
-                print(f"{key}: {val:.3f} V")
-    return gates
-

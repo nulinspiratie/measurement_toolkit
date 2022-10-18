@@ -1,8 +1,7 @@
-from cgitb import reset
 from time import sleep
 import sys
 import numpy as np
-from qcodes.utils.dataset.doNd import ArraySweep
+from ..tools.gate_tools import iterate_gates
 
 """
 Example:
@@ -11,35 +10,11 @@ for gate in iterate_gates(gates, sort=True):
     measure_gate_leakage(gate, voltages=voltages, current_limit=1e-9)
 """
 
-
-def iterate_gates(gates, sort=True, silent=False):
-    assert all(gate.DC_line is not None for gate in gates.values())
-
-    if sort:
-        sorted_gates = sorted(
-            gates.values(), key=lambda gate: gate.DC_line
-        )  # TODO verify this line is correct
-    else:
-        sorted_gates = gates
-
-    breakout_box = None
-    for gate in sorted_gates:
-        if not silent:
-            # Check if we should emit notification to switch breakout box
-            if gate.breakout_box != breakout_box:
-                print(f"Switch to breakout box {gate.breakout_box}")
-                sys.stdout.flush()
-                input()
-                breakout_box = gate.breakout_box
-
-            print(f"Connect breakout box {gate.breakout_box} idx {gate.breakout_idx}")
-            for breakout_idx in gate.breakout_idxs[1:]:
-                print(f"Float breakout box {gate.breakout_box} idx {gate.breakout_idx}")
-            sys.stdout.flush()
-            input()
-
-            yield gate
-    print("Finished iterating over gates")
+__all__ = [
+    'measure_leakage',
+    'measure_gate_leakage',
+    'measure_gate_leakages'
+]
 
 
 def measure_leakage(

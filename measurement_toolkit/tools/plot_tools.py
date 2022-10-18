@@ -12,7 +12,7 @@ from matplotlib.figure import Figure
 
 from .data_tools import convert_to_dataset, dataset_information
 
-__all__ = ['plot_data', 'plot_ds', 'plot_dual_axis', 'show_image']
+__all__ = ['plot_data', 'plot_dual_axis', 'show_image']
 
 
 def plot_data(
@@ -180,9 +180,6 @@ def plot_data(
         fig.tight_layout()
 
         return figure_list, axes_list
-
-# Deprecated
-plot_ds = plot_data
 
 
 def create_animation(filename, figs, fps=1):

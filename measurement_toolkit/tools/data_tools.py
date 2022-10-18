@@ -15,9 +15,9 @@ __all__ = [
     'get_latest_run_id',
     'smooth',
     'retrieve_station_component',
-    'magnetic_fields',
     'modify_measurement_note',
-    'test_database'
+    'use_test_database',
+    'get_Fourier_component'
 ]
 
 def load_data(run_id, dataset_type='xarray', print_summary=True):
@@ -209,7 +209,7 @@ def modify_measurement_note(run_id=None):
 
 
 @contextmanager
-def test_database():
+def use_test_database():
     """
     Initializes or creates a database and restores the 'db_location' afterwards.
 

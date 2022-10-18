@@ -14,6 +14,10 @@ from qcodes.station import Station
 from qcodes.utils import validators as vals
 
 
+__all__ = [
+    'DCLine'
+]
+
 this = sys.modules[__name__]  # Allows setting of variables via 'setattr(this, name, value)'
 
 

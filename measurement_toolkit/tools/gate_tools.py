@@ -1,11 +1,48 @@
 from functools import partial
+from time import sleep
 import pandas as pd
 
 import qcodes as qc
 from qcodes.utils import validators as vals
 
-from measurement_toolkit.parameters.DC_line_parameter import DCLine
+from measurement_toolkit.parameters import DCLine, CombinedParameter
 from measurement_toolkit.measurements.DC_measurements import bias_scan
+
+
+__all__ = [
+    'iterate_gates',
+    'initialize_DC_lines',
+    'configure_DC_bias_line',
+    'combine_gates',
+    'check_gate_leakages'
+]
+
+def iterate_gates(gates, sort=True, silent=False):
+    assert all(gate.DC_line is not None for gate in gates.values())
+
+    if sort:
+        sorted_gates = sorted(
+            gates.values(), key=lambda gate: gate.DC_line
+        )  # TODO verify this line is correct
+    else:
+        sorted_gates = gates
+
+    breakout_box = None
+    for gate in sorted_gates:
+        if not silent:
+            # Check if we should emit notification to switch breakout box
+            if gate.breakout_box != breakout_box:
+                print(f"Switch to breakout box {gate.breakout_box}", flush=True)
+                input()
+                breakout_box = gate.breakout_box
+
+            print(f"Connect breakout box {gate.breakout_box} idx {gate.breakout_idx}")
+            for breakout_idx in gate.breakout_idxs[1:]:
+                print(f"Float breakout box {gate.breakout_box} idx {gate.breakout_idx}", flush=True)
+            input()
+
+            yield gate
+    print("Finished iterating over gates")
 
 
 def initialize_DC_lines(
@@ -118,3 +155,54 @@ def configure_DC_bias_line(voltage_parameter, scale=1e3, update_monitor=True):
         station._monitor_parameters.insert(0, V_bias)
 
     return V_bias
+
+
+def combine_gates(
+        *gates,
+        max_difference=2e-3,
+        precision=3,
+        scales=None,
+        offsets=None
+):
+    station = qc.Station.default
+
+    assert len(set(gates)) == len(gates), f"{gates=} have duplicates"
+    
+    combined_gates = []
+    for gate in gates:
+        if isinstance(gate, int):
+            combine_gates.append(station.gates[gate])
+        else:
+            combined_gates.append(gate)
+
+    name = 'gate_' + '_'.join(f'DC{gate.DC_line}' for gate in gates)
+    # label = ' & '.join(f'{gate.name}:DC{gate.DC_line}' for gate in combined_gates)
+
+    parameter = CombinedParameter(
+        name=name,
+        # label=label,
+        parameters=[gate for gate in combined_gates],
+        unit='V',
+        max_difference=max_difference,
+        precision=precision,
+        scales=scales,
+        offsets=offsets
+    )
+    return parameter
+
+
+def check_gate_leakages(current_threshold=3e-9):
+    gates = qc.Station.default.gates
+    leaking_gates = {}
+    for gate in gates.values():
+        if hasattr(gate, 'i'):
+            current = gate.i()
+
+            if current > current_threshold:
+                leaking_gates[gate] = current
+
+    if leaking_gates:
+        for gate, current in leaking_gates.items():
+            print(f'{current * 1e9:.0f} nA leakage from gate {gate}')
+    else:
+        print('No gate leakage')
