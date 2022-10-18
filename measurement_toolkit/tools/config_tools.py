@@ -14,7 +14,6 @@ from qcodes.dataset.experiment_container import load_or_create_experiment
 __all__ = [
     'update_plottr_database',
     'initialize_config',
-    'initialize_from_config'
 ]
 
 
@@ -50,6 +49,37 @@ def update_plottr_database(database_path):
     return settings
 
 
+def load_database_from_config(create_db=False):
+    config = qc.config
+
+    db_location = Path(config.core.db_location_format.format(
+        **config.user, incrementer='{incrementer}'
+    ))
+    db_folder = db_location.parent
+
+    if not db_folder.exists():
+        if create_db:
+            print(f'Creating database folder {db_folder}')
+            os.makedirs(db_folder)
+        else:
+            raise FileNotFoundError(f'Cannot open database. Database folder {db_folder} does not exist')
+
+    max_database_incrementer = 99
+    for k in range(max_database_incrementer, 0, -1):
+        db_file = db_folder / db_location.name.format(incrementer=str(k))
+        if db_file.exists():
+            break
+    else:
+        if create_db:
+            db_file = db_folder / db_location.name.format(incrementer=1)
+            print(f'Creating new database at {db_file}')
+            database = initialise_or_create_database_at(str(db_file))
+        else:
+            raise FileNotFoundError(f'No database found in {db_folder}. Can be created by passing kwarg "create_db=True"')
+
+    config.core.db_location = str(db_file)
+
+
 def initialize_config(
     chip_name, 
     experiment_name, 
@@ -61,12 +91,32 @@ def initialize_config(
     update_plottr=False,
     show_device=True
 ):
-    global database, exp
+    """Initializes the config from a template config
 
+    Also performs some ancillary functions such as creating a database if necessary,
+    updating plottr database, etc.
+    
+    Args:
+        chip_name: Name of chip, e.g. "M35_B5"
+        experiment_name: Name of experiment, e.g. "ParityQubit"
+        device_name: Name of the device, e.g. "P1"
+        author: Name of person measuring
+        create_db: Create new database if none is found in ``db_location``
+        use_mainfolder: whether to use ``config.user.mainfolder`` to update the config
+            If using mainfolder, the user config (located in ~/qcodesrc.json) needs to 
+            contain the entry "user.mainfolder"
+        silent: Whether to suppress output printing
+        update_plottr: Whether to update plottr database file
+        show_device: Show initialized device image.
+            The template should contain key "device_image_format"
+            This functionality has not been verified.
+
+    Notes
+    - It is recommended to have a main folder. To set this up, make sure that the file
+      "~/qcodesrc.json" exists (copy from qcodes if it doesn't) and contains the entry
+      "user.mainfolder" that points to the main folder
+    """
     config = qc.config
-
-    root_dir = Path(qc.config.user.mainfolder)
-    assert root_dir.exists()
 
     # Load config
     if use_mainfolder:
@@ -76,7 +126,6 @@ def initialize_config(
         # Configure qcodes.config
         # Note that user.mainfolder must be set in ~/qcodesrc.json
         config.update_config(root_dir)
-
 
     # Update keyword config entries
     config.user.chip_name = chip_name
@@ -90,40 +139,20 @@ def initialize_config(
             label = key.split('_format')[0]
             config.user[label] = val.format(**config.user)
 
+    # Initialize database
     if 'db_location_format' in config.core:
-        db_location = Path(config.core.db_location_format.format(**config.user, incrementer='{incrementer}'))
-        db_folder = db_location.parent
-
-        if not db_folder.exists():
-            if create_db:
-                print(f'Creating database folder {db_folder}')
-                os.makedirs(db_folder)
-            else:
-                raise FileNotFoundError(f'Cannot open database. Database folder {db_folder} does not exist')
-
-        max_database_incrementer = 99
-        for k in range(max_database_incrementer, 0, -1):
-            db_file = db_folder / db_location.name.format(incrementer=str(k))
-            if db_file.exists():
-                break
-        else:
-            if create_db:
-                db_file = db_folder / db_location.name.format(incrementer=1)
-                print(f'Creating new database at {db_file}')
-                database = initialise_or_create_database_at(str(db_file))
-            else:
-                raise FileNotFoundError(f'No database found in {db_folder}. Can be created by passing kwarg "create_db=True"')
-
-        config.core.db_location = str(db_file)
+        database = load_database_from_config(create_db=create_db)
+        print(f'Database: {qc.config.core.db_location}')
     else:
         database = initialise_database()
-    print(f'Database: {qc.config.core.db_location}')
 
+    # Load experiment
     exp = load_or_create_experiment(
         experiment_name=config.user.experiment_name,
         sample_name=config.user.sample_name
     )
 
+    # Print information
     if not silent:
         print(
             f'Author: {config.user.author}\n'
@@ -131,6 +160,7 @@ def initialize_config(
             f'Device sample: {qc.config.user.sample_name}'
         )
 
+    # Update plottr database
     if update_plottr:
         try:
             update_plottr_database(database_path=qc.config.core.db_location)
@@ -146,41 +176,3 @@ def initialize_config(
             show_image(device_image_filepath.with_suffix('.png'))
         elif device_image_filepath.with_suffix('.pdf').exists():
             show_image(device_image_filepath.with_suffix('.pdf'))
-
-
-def initialize_from_config(
-        silent=False,
-        use_mainfolder=True,
-        experiment_name=None,
-        sample_name=None,
-        author=None
-):
-    global database, exp
-
-    # Load config
-    if use_mainfolder:
-        root_dir = Path(qc.config.user.mainfolder)
-        assert root_dir.exists()
-
-        # Configure qcodes.config
-        # Note that user.mainfolder must be set in ~/qcodesrc.json
-        qc.config.update_config(root_dir)
-
-    if experiment_name is None:
-        experiment_name = qc.config.user.experiment_name
-    if sample_name is None:
-        sample_name = qc.config.user.sample_name
-
-    if not silent:
-        print(f'Database: {qc.config.core.db_location}')
-
-    database = initialise_database()
-
-    exp = load_or_create_experiment(
-        experiment_name=experiment_name,
-        sample_name=sample_name
-    )
-
-    if not silent:
-        print(f'Experiment: {qc.config.user.experiment_name}\n'
-              f'Device sample: {qc.config.user.sample_name}')
