@@ -48,7 +48,7 @@ def iterate_gates(gates, sort=True, silent=False):
 def initialize_DC_lines(
     gates_excel_file, 
     qdac=None, 
-    namespace=None,
+    populate_namespace=True,
     update_monitor=True,
     parameter_container=None
 ):
@@ -66,24 +66,32 @@ def initialize_DC_lines(
         'lines': lines,
         'DC_gates': DC_gates,
         'gates': [gate for gate in DC_gates.values() if gate.DC_line is not None],
-        'ohmics': [line for name, line in lines.items() if line.line_type == 'ohmic']
+        'ohmics': [line for line in lines.values() if line.line_type == 'ohmic']
     }
-    
-    # Populate namespace
-    if namespace is not None:
-        # Add DC lines to namespace
-        for line in lines.values():
-            setattr(namespace, line.name, line)
-            
-        # Add line groups to namespace
-        for key, line_group in DC_line_groups.items():
-            setattr(namespace, key, line_group)
     
     # Add gate lists to station
     station = qc.Station.default or qc.Station()
     station.lines = DC_line_groups['lines']
     station.gates = DC_line_groups['gates']
     station.ohmics = DC_line_groups['ohmics']
+    
+    # Populate namespace
+    if populate_namespace:
+        from IPython import get_ipython
+        shell = get_ipython
+        if shell is not None:
+            # Remove any pre-existing DC lines from namespace
+            if hasattr(station, lines):
+                for line in station.lines:
+                    shell.user_ns.pop(line, None)
+
+            # Add DC lines to namespace
+            for line in lines.values():
+                shell.user_ns[line.name] = line
+                
+            # Add line groups to namespace
+            for key, line_group in DC_line_groups.items():
+                shell.user_ns[key] = line_group
 
     # Perform these operations if qdac is passed
     if qdac is not None:

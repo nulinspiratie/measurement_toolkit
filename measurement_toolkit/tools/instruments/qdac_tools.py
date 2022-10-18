@@ -27,39 +27,6 @@ def ramp_voltages_zero():
             ch.v(0)
 
 
-def ramp_voltages(target_voltages, other_gates_zero=True, silent=True):
-    # QDac should be accessible from Station
-    station = qc.Station.default
-    qdac = station.qdac
-    yoko = station.components['yoko']
-    yoko.voltage(0)
-
-    assert all(isinstance(channel_id, int) for channel_id in target_voltages)
-
-    # Convert DC lines to DAC channels
-    qdac_target_voltages = {}
-    for key, target_voltage in target_voltages.items():
-        gate = next(g for g in gates.values() if g.DC_line == key)
-        assert gate.DAC_channel is not None
-        qdac_target_voltages[gate.DAC_channel] = target_voltage
-
-    for ch in qdac.channels:
-        if ch.id in qdac_target_voltages:
-            target_voltage = qdac_target_voltages[ch.id]
-        elif other_gates_zero:
-            target_voltage = 0
-        else:
-            continue
-
-        voltage_difference = target_voltage - ch.v()
-        if not silent and abs(voltage_difference) > 1e-4:
-            print(f'Ramping ch{ch.id} from {round(ch.v(), 4):2.3g} V to {round(target_voltage, 4):.3g} V...', end=' ')
-            ch.v(target_voltage)
-            print('Done')
-        else:
-            ch.v(target_voltage)
-
-
 def qdac_gate_voltages(qdac=None, show_zero=False):
     # QDac should be accessible from Station
     station = qc.Station.default

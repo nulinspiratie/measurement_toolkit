@@ -2,14 +2,21 @@ import os
 import json
 from pathlib import Path
 import warnings
-from IPython.display import IFrame
+from functools import partial
 
 from measurement_toolkit.tools.plot_tools import show_image
+from measurement_toolkit.parameters import create_conductance_parameters
+from measurement_toolkit.tools import ParameterContainer
+from measurement_toolkit.tools.gate_tools import initialize_DC_lines
+from measurement_toolkit.tools.data_tools import retrieve_station_component
 
 import qcodes as qc
-from qcodes.configuration.config import Config
-from qcodes.dataset.sqlite.database import initialise_database, initialise_or_create_database_at
-from qcodes.dataset.experiment_container import load_or_create_experiment
+from qcodes.dataset import (
+    Measurement, 
+    initialise_database, 
+    initialise_or_create_database_at, 
+    load_or_create_experiment,
+)
 
 __all__ = [
     'update_plottr_database',
@@ -80,6 +87,34 @@ def load_database_from_config(create_db=False):
     config.core.db_location = str(db_file)
 
 
+def _initialize_parameter_containers(populate_namespace=True, add_to_station=True):
+    gate_voltages = ParameterContainer('gate_voltages')
+    def _call_gate_voltages(dataset, **kwargs):
+        try:
+            return retrieve_station_component(dataset, **kwargs)
+        except Exception:
+            from measurement_toolkit.tools.instruments.qdac_tools import qdac_gate_voltages
+            return qdac_gate_voltages(dataset)
+    gate_voltages.call_with_args = partial(_call_gate_voltages, component_name='gate_voltages')
+
+    system_summary = ParameterContainer(name='system_summary', parameter_containers={'gates': gate_voltages})
+    system_summary.call_with_args = partial(retrieve_station_component, component_name='system_summary', return_dict=False)
+    Measurement.enteractions = [[system_summary, ()]]
+
+    station = qc.Station.default
+    if add_to_station and station is not None:
+        station.add_component(gate_voltages)
+        station.add_component(system_summary)
+    
+    if populate_namespace:
+        from IPython import get_ipython
+        shell = get_ipython()
+        if shell is not None:
+            shell.user_ns['gate_voltages'] = gate_voltages
+            shell.user_ns['system_summary'] = system_summary
+
+    return gate_voltages, system_summary
+
 def initialize_config(
     chip_name, 
     experiment_name, 
@@ -122,7 +157,6 @@ def initialize_config(
     if use_mainfolder:
         root_dir = Path(config.user.mainfolder)
         assert root_dir.exists()
-
         # Configure qcodes.config
         # Note that user.mainfolder must be set in ~/qcodesrc.json
         config.update_config(root_dir)
@@ -138,6 +172,14 @@ def initialize_config(
         if key.endswith('_format'):
             label = key.split('_format')[0]
             config.user[label] = val.format(**config.user)
+
+    # Load station config
+    station = qc.Station.default
+    if station is not None and 'station_file' in config.user:
+        if config.user.station_file not in station.config_file:
+            station.config_file.append(config.user.station_file)
+            station.load_config_files(config.user.station_file)
+    
 
     # Initialize database
     if 'db_location_format' in config.core:
@@ -159,6 +201,23 @@ def initialize_config(
             f'Experiment: {qc.config.user.experiment_name}\n'
             f'Device sample: {qc.config.user.sample_name}'
         )
+
+    # Initialize system_summary and gate_voltages ParameterContainers
+    gate_voltages, system_summary = _initialize_parameter_containers(
+        populate_namespace=True,
+        add_to_station=True
+    )
+
+    # Load gates
+    if 'gates_file' in config.user:
+        initialize_DC_lines(
+            gates_excel_file=config.user.gates_file,
+            parameter_container=gate_voltages
+        )
+    
+    # Create conductance parameters
+    station.conductance_parameters = create_conductance_parameters(station.ohmics)
+    station.measure_params = station.conductance_parameters
 
     # Update plottr database
     if update_plottr:
