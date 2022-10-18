@@ -350,69 +350,6 @@ class DCLine(Parameter):
 
         self.cache._update_with(value=val, raw_value=val)
 
-    def sweep_to(
-            self,
-            target_voltage,
-            initial_voltage=None,
-            step=None,
-            num=None,
-            delay=None,
-            sweep=None,
-            measure=True,
-            show_progress=True,
-            plot=True,
-            **kwargs
-    ):
-        return sweep_gate_to(
-            gate=self,
-            target_voltage=target_voltage,
-            initial_voltage=initial_voltage,
-            step=step,
-            num=num,
-            delay=delay,
-            sweep=sweep,
-            measure=measure,
-            show_progress=show_progress,
-            plot=plot,
-            **kwargs
-        )
-
-    def sweep_around(
-            self,
-            dV,
-            step=None,
-            num=None,
-            delay=None,
-            sweep=None,
-            measure=True,
-            show_progress=True,
-            plot=True,
-            **kwargs
-    ):
-        # Record initial voltage, also to reset later on
-        V0 = self()
-        
-        try:
-            result = sweep_gate_to(
-                gate=self,
-                target_voltage=V0 + dV,
-                initial_voltage=V0 - dV,
-            step=step,
-            num=num,
-            delay=delay,
-            sweep=sweep,
-            measure=measure,
-            show_progress=show_progress,
-            plot=plot,
-            **kwargs
-            )
-        finally:
-            # Reset voltage to original
-            self(V0)
-
-        return result
-
-
     def bias_scan(
             self,
             max_voltage=600e-6,
@@ -420,25 +357,28 @@ class DCLine(Parameter):
             num=201,
             delay=None,
             sweep=None,
-            measure=True,
-            show_progress=True,
             plot=True,
             **kwargs
     ):
         assert self.lockin_out is not None
-        return sweep_gate_to(
-            gate=self,
-            target_voltage=max_voltage,
-            initial_voltage=-max_voltage,
-            step=step,
-            num=num,
-            delay=delay,
-            sweep=sweep,
-            measure=measure,
-            show_progress=show_progress,
-            plot=plot,
-            **kwargs
-        )
+        assert self.line_type == 'ohmic'
+
+        initial_voltage = self()
+        try:
+            dataset = self.sweep(
+                start=-max_voltage,
+                stop=max_voltage,
+                step=step,
+                num=num,
+                delay=delay,
+                sweep=sweep,
+                plot=plot,
+                **kwargs
+            )
+        finally:
+            self(initial_voltage)
+
+        return dataset
 
     def ramp_voltage(self, target_voltage, current_limit=None, delay=100e-3, step=10e-3, silent=True):
         if current_limit is None:

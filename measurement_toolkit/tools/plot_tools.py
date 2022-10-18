@@ -1,3 +1,4 @@
+from re import T
 import numpy as np
 from pathlib import Path
 import warnings
@@ -33,9 +34,11 @@ def plot_data(
         diverging_cmap=True,
         **plot_kwargs
 ):
-
     if print_summary:
-        dataset_information(dataset, silent=False)
+        try:
+            dataset_information(dataset, silent=False)
+        except Exception as e:
+            print(f'Could not extract system_summary: {repr(e)}')
 
     # Ensure we have an xarray
     dataset = convert_to_dataset(dataset, 'xarray')
