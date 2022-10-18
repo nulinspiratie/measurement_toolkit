@@ -1,3 +1,5 @@
+import numpy as np
+from time import sleep
 from qcodes import (
     load_by_run_spec,
 )

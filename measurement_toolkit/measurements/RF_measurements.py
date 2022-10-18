@@ -1,4 +1,5 @@
 import time
+from time import sleep
 import numpy as np
 from matplotlib import pyplot as plt
 from functools import partial
