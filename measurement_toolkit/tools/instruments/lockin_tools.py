@@ -46,7 +46,7 @@ class LockinTimeParameter(Parameter):
         self._delay = delay
 
 
-def configure_lockins(*lockins):asdas
+def configure_lockins(*lockins):
     assert station is not None
     
     # Add Xnoise and Ynoise parameters
