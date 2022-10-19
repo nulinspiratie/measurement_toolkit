@@ -1,8 +1,10 @@
 import builtins
+import os
 import sys
 from pathlib import Path
 from typing import Union
 import logging
+import nbformat
 
 import qcodes as qc
 
@@ -85,7 +87,7 @@ def using_ipython() -> bool:
     return hasattr(builtins, '__IPYTHON__')
 
 
-def execute_file(filepath: (str, Path), mode=None, globals=None, locals=None):
+def execute_file(filepath, mode=None, globals=None, locals=None):
     if isinstance(filepath, str):
         filepath = Path(filepath)
 
@@ -108,7 +110,6 @@ def execute_file(filepath: (str, Path), mode=None, globals=None, locals=None):
         e.args = (e.args[0], f"SilQ initialization error in {filepath}", *e.args[1:])
         tb = sys.exc_info()[2]
         raise e.with_traceback(tb.tb_next.tb_next.tb_next)
-
 
 
 def run_script(
@@ -168,3 +169,52 @@ def run_script(
     if not silent:
         print(f'Running script {file.stem}')
     execute_file(file, globals=globals, locals=locals)
+
+
+def create_new_notebook(path, open=False, create_dirs=False):
+    """Creates a new empty notebook"""
+    path = Path(path)
+
+    if path.exists():
+        print(f'Notebook already exists {path}')
+    else:
+        # Create parent folder(s) if necessary
+        if create_dirs and not path.parent.exists():
+            os.makedirs(path.parent)
+
+        # Create notebook in folder
+        notebook = nbformat.v4.new_notebook()
+        nbformat.write(notebook, path)
+
+    if open:
+        os.startfile(path)
+
+
+def configure_device_folder(
+    root_folder, 
+    silent=True, 
+    create_daily_measurement_notebook=True
+):
+    root_folder = Path(root_folder)
+
+    folders = [
+        root_folder, 
+        root_folder / 'Measurement notebooks',
+        root_folder / 'Analysis notebooks',
+    ]
+
+    for folder in folders:
+        if not folder.exists():
+            os.mkdir(folder)
+            if not silent:
+                print(f'Created folder {folder}')
+
+    # Create daily notebook file
+    if create_daily_measurement_notebook:
+        import time
+        today = time.strftime("%Y-%m-%d")
+        notebook_file = root_folder / f'Measurement notebooks/{today}.ipynb'
+        if not notebook_file.exists():
+            create_new_notebook(notebook_file, open=True)
+            if not silent:
+                print(f'Created daily measurement notebook {notebook_file}')
