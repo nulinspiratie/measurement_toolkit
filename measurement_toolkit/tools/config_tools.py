@@ -59,7 +59,8 @@ def initialize_config(
     use_mainfolder=True, 
     silent=False, 
     update_plottr=False,
-    show_device=True
+    show_device=True,
+    configure_device_folder=False
 ):
     global database, exp
 
@@ -148,39 +149,10 @@ def initialize_config(
             show_image(device_image_filepath.with_suffix('.pdf'))
 
 
-def initialize_from_config(
-        silent=False,
-        use_mainfolder=True,
-        experiment_name=None,
-        sample_name=None,
-        author=None
-):
-    global database, exp
-
-    # Load config
-    if use_mainfolder:
-        root_dir = Path(qc.config.user.mainfolder)
-        assert root_dir.exists()
-
-        # Configure qcodes.config
-        # Note that user.mainfolder must be set in ~/qcodesrc.json
-        qc.config.update_config(root_dir)
-
-    if experiment_name is None:
-        experiment_name = qc.config.user.experiment_name
-    if sample_name is None:
-        sample_name = qc.config.user.sample_name
-
-    if not silent:
-        print(f'Database: {qc.config.core.db_location}')
-
-    database = initialise_database()
-
-    exp = load_or_create_experiment(
-        experiment_name=experiment_name,
-        sample_name=sample_name
-    )
-
-    if not silent:
-        print(f'Experiment: {qc.config.user.experiment_name}\n'
-              f'Device sample: {qc.config.user.sample_name}')
+    if configure_device_folder and 'analysis_folder' in config.user:
+        from measurement_toolkit.tools.notebook_tools import configure_device_folder
+        configure_device_folder(
+            root_folder=config.user.analysis_folder,
+            silent=silent,
+            create_daily_measurement_notebook=True
+        )

@@ -13,7 +13,9 @@ __all__ = [
     'get_last_input_cells',
     'using_ipython',
     'execute_file',
-    'run_script'
+    'run_script',
+    'create_new_notebook',
+    'configure_device_folder'
 ]
 
 logger = logging.getLogger(__name__)
