@@ -2,19 +2,23 @@ import os
 import json
 from pathlib import Path
 import warnings
-from IPython.display import IFrame
+from functools import partial
 
 from measurement_toolkit.tools.plot_tools import show_image
+from measurement_toolkit.tools.gate_tools import initialize_DC_lines
+from measurement_toolkit.tools.data_tools import retrieve_station_component
 
 import qcodes as qc
-from qcodes.configuration.config import Config
-from qcodes.dataset.sqlite.database import initialise_database, initialise_or_create_database_at
-from qcodes.dataset.experiment_container import load_or_create_experiment
+from qcodes.dataset import (
+    Measurement, 
+    initialise_database, 
+    initialise_or_create_database_at, 
+    load_or_create_experiment,
+)
 
 __all__ = [
     'update_plottr_database',
     'initialize_config',
-    'initialize_from_config'
 ]
 
 
@@ -50,6 +54,70 @@ def update_plottr_database(database_path):
     return settings
 
 
+def load_database_from_config(create_db=False):
+    config = qc.config
+
+    db_location = Path(config.core.db_location_format.format(
+        **config.user, incrementer='{incrementer}'
+    ))
+    db_folder = db_location.parent
+
+    if not db_folder.exists():
+        if create_db:
+            print(f'Creating database folder {db_folder}')
+            os.makedirs(db_folder)
+        else:
+            raise FileNotFoundError(f'Cannot open database. Database folder {db_folder} does not exist')
+
+    max_database_incrementer = 99
+    for k in range(max_database_incrementer, 0, -1):
+        db_file = db_folder / db_location.name.format(incrementer=str(k))
+        if db_file.exists():
+            break
+    else:
+        if create_db:
+            db_file = db_folder / db_location.name.format(incrementer=1)
+            print(f'Creating new database at {db_file}')
+            database = initialise_or_create_database_at(str(db_file))
+        else:
+            raise FileNotFoundError(f'No database found in {db_folder}. Can be created by passing kwarg "create_db=True"')
+
+    config.core.db_location = str(db_file)
+
+
+def _initialize_parameter_containers(populate_namespace=True, add_to_station=True):
+    from measurement_toolkit.tools import ParameterContainer
+    gate_voltages = ParameterContainer('gate_voltages')
+    def _call_gate_voltages(dataset, **kwargs):
+        try:
+            return retrieve_station_component(dataset, **kwargs)
+        except Exception:
+            from measurement_toolkit.tools.instruments.qdac_tools import qdac_gate_voltages
+            return qdac_gate_voltages(dataset)
+    gate_voltages.call_with_args = partial(_call_gate_voltages, component_name='gate_voltages')
+
+    system_summary = ParameterContainer(name='system_summary', parameter_containers={'gates': gate_voltages})
+    system_summary.call_with_args = partial(retrieve_station_component, component_name='system_summary', return_dict=False)
+    Measurement.enteractions = [[system_summary, ()]]
+
+    station = qc.Station.default
+    if add_to_station and station is not None:
+        if hasattr(station, 'gate_voltages'):
+            station.remove_component('gate_voltages')
+        if hasattr(station, 'system_summary'):
+            station.remove_component('system_summary')
+        station.add_component(gate_voltages)
+        station.add_component(system_summary)
+    
+    if populate_namespace:
+        from IPython import get_ipython
+        shell = get_ipython()
+        if shell is not None:
+            shell.user_ns['gate_voltages'] = gate_voltages
+            shell.user_ns['system_summary'] = system_summary
+
+    return gate_voltages, system_summary
+
 def initialize_config(
     chip_name, 
     experiment_name, 
@@ -60,24 +128,44 @@ def initialize_config(
     silent=False, 
     update_plottr=False,
     show_device=True,
-    configure_device_folder=False
+    configure_device_folder=False,
+    populate_namespace=True,
 ):
-    global database, exp
+    """Initializes the config from a template config
 
+    Also performs some ancillary functions such as creating a database if necessary,
+    updating plottr database, etc.
+    
+    Args:
+        chip_name: Name of chip, e.g. "M35_B5"
+        experiment_name: Name of experiment, e.g. "ParityQubit"
+        device_name: Name of the device, e.g. "P1"
+        author: Name of person measuring
+        create_db: Create new database if none is found in ``db_location``
+        use_mainfolder: whether to use ``config.user.mainfolder`` to update the config
+            If using mainfolder, the user config (located in ~/qcodesrc.json) needs to 
+            contain the entry "user.mainfolder"
+        silent: Whether to suppress output printing
+        update_plottr: Whether to update plottr database file
+        show_device: Show initialized device image.
+            The template should contain key "device_image_format"
+            This functionality has not been verified.
+
+    Notes
+    - It is recommended to have a main folder. To set this up, make sure that the file
+      "~/qcodesrc.json" exists (copy from qcodes if it doesn't) and contains the entry
+      "user.mainfolder" that points to the main folder
+    """
     config = qc.config
-
-    root_dir = Path(qc.config.user.mainfolder)
-    assert root_dir.exists()
+    station = qc.Station.default
 
     # Load config
     if use_mainfolder:
         root_dir = Path(config.user.mainfolder)
         assert root_dir.exists()
-
         # Configure qcodes.config
         # Note that user.mainfolder must be set in ~/qcodesrc.json
         config.update_config(root_dir)
-
 
     # Update keyword config entries
     config.user.chip_name = chip_name
@@ -91,40 +179,20 @@ def initialize_config(
             label = key.split('_format')[0]
             config.user[label] = val.format(**config.user)
 
+    # Initialize database
     if 'db_location_format' in config.core:
-        db_location = Path(config.core.db_location_format.format(**config.user, incrementer='{incrementer}'))
-        db_folder = db_location.parent
-
-        if not db_folder.exists():
-            if create_db:
-                print(f'Creating database folder {db_folder}')
-                os.makedirs(db_folder)
-            else:
-                raise FileNotFoundError(f'Cannot open database. Database folder {db_folder} does not exist')
-
-        max_database_incrementer = 99
-        for k in range(max_database_incrementer, 0, -1):
-            db_file = db_folder / db_location.name.format(incrementer=str(k))
-            if db_file.exists():
-                break
-        else:
-            if create_db:
-                db_file = db_folder / db_location.name.format(incrementer=1)
-                print(f'Creating new database at {db_file}')
-                database = initialise_or_create_database_at(str(db_file))
-            else:
-                raise FileNotFoundError(f'No database found in {db_folder}. Can be created by passing kwarg "create_db=True"')
-
-        config.core.db_location = str(db_file)
+        database = load_database_from_config(create_db=create_db)
+        print(f'Database: {qc.config.core.db_location}')
     else:
         database = initialise_database()
-    print(f'Database: {qc.config.core.db_location}')
 
-    exp = load_or_create_experiment(
+    # Load experiment
+    experiment = load_or_create_experiment(
         experiment_name=config.user.experiment_name,
         sample_name=config.user.sample_name
     )
 
+    # Print information
     if not silent:
         print(
             f'Author: {config.user.author}\n'
@@ -132,6 +200,27 @@ def initialize_config(
             f'Device sample: {qc.config.user.sample_name}'
         )
 
+    # Initialize system_summary and gate_voltages ParameterContainers
+    gate_voltages, system_summary = _initialize_parameter_containers(
+        populate_namespace=populate_namespace,
+        add_to_station=True
+    )
+
+    # Load gates
+    if 'gates_file' in config.user:
+        initialize_DC_lines(
+            gates_excel_file=config.user.gates_file,
+            parameter_container=gate_voltages,
+            populate_namespace=populate_namespace
+        )
+    
+    # Create conductance parameters
+    if getattr(station, 'instruments_loaded', False):
+        from measurement_toolkit.parameters import create_conductance_parameters
+        station.conductance_parameters = create_conductance_parameters(station.ohmics)
+        station.measure_params = station.conductance_parameters
+
+    # Update plottr database
     if update_plottr:
         try:
             update_plottr_database(database_path=qc.config.core.db_location)
@@ -148,7 +237,6 @@ def initialize_config(
         elif device_image_filepath.with_suffix('.pdf').exists():
             show_image(device_image_filepath.with_suffix('.pdf'))
 
-
     if configure_device_folder and 'analysis_folder' in config.user:
         from measurement_toolkit.tools.notebook_tools import configure_device_folder
         configure_device_folder(
@@ -156,3 +244,11 @@ def initialize_config(
             silent=silent,
             create_daily_measurement_notebook=True
         )
+    
+    if populate_namespace:
+        from IPython import get_ipython
+        shell = get_ipython()
+        if shell is not None:
+            shell.user_ns['conductance_parameters'] = station.conductance_parameters
+            shell.user_ns['database'] = database
+            shell.user_ns['experiment'] = experiment

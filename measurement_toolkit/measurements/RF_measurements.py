@@ -1,4 +1,5 @@
 import time
+from time import sleep
 import numpy as np
 from matplotlib import pyplot as plt
 from functools import partial
@@ -70,7 +71,7 @@ class QDacSweeper():
 class QDac2Sweeper():
     trigger_width = 0.1e-3
 
-    def __init__(self, name, qdac_channel, trigger_channel, max_ramp_rate=0, delay_start=None, scale=None):
+    def __init__(self, name, qdac_channel, trigger_channel, max_ramp_rate=0, delay_start=None, scale=None, dV_limit=None):
         self.name = name
         self.qdac_channel = qdac_channel
         self.trigger_channel = trigger_channel
@@ -78,6 +79,7 @@ class QDac2Sweeper():
         self.max_ramp_rate = max_ramp_rate
         self.delay_start = delay_start
         self.qdac = self.qdac_channel.parent
+        self.dV_limit = None
         self.silent = True
 
         self.sweep_settings = None
@@ -149,6 +151,10 @@ class QDac2Sweeper():
             V_min = max(V_min, -10)
             V_max = min(V_max, 10)
             assert np.all((V_min <= voltages) & (voltages <= V_max)), f"Voltages are out of range {V_min} <= voltages <= {V_max}"
+        if self.dV_limit is not None:
+            dV_limit = self.dV_limit * self.scale
+            assert np.all((voltages - V0) < dV_limit), f"Voltages are not within {self.dV_limit} of current value {self.qdac_channel.v()}"
+
 
         # Optionally plot results
         if plot:
@@ -224,6 +230,13 @@ class GateScanRF():
         self._raw_results = None
         self._t_acquisition_start = None
 
+        self.RF_parameters = {
+            'output_amplitude': self.RF_lockin.sigouts[0].amplitudes[0].value,
+            't_int': self.demodulator.timeconstant,  # sets bandwidth to ~ 1/time_constant/4pi
+            'output_enabled': self.RF_lockin.sigouts[0].on
+        }
+        
+
     @property
     def sweep_values(self):
         V_start = self.sweeper.sweep_settings.get('V_start', None)
@@ -262,6 +275,9 @@ class GateScanRF():
         self.daq.duration(self.duration)
         self.daq.grid.cols(self.num_points)
         self.daq.grid.rows(self.num_traces)
+
+        t_int = duration / num_points
+        self.demodulator.timeconstant(t_int)  # sets bandwidth to ~ 1/time_constant/4pi
 
     def setup(self, V_start, V_stop, t_int, num_points, num_traces, plot=False):
         duration = t_int * num_points
@@ -335,6 +351,7 @@ class GateScanRF():
         ):
 
         # Start RF acquisition
+        duration = self.sweeper.sweep_settings['duration']
         self.start_RF_lockin_acquisition()
         if not silent:
             print('Started RF acquisition')
@@ -348,7 +365,8 @@ class GateScanRF():
             # time.sleep(0.3)
 
         if finalize:
-            self.wait_acquisition_complete(timeout=5, silent=silent)
+            timeout = max(1.5*duration, 5)
+            self.wait_acquisition_complete(timeout=timeout, silent=silent)
             results = self.process_acquisition()
         else:
             results = None
@@ -420,7 +438,9 @@ class GateScanRF():
 
         # Ensure we always have an iterable to sweep over
         if sweep is None:
-            sweep = [None]
+            sequence = [None]
+        else:
+            sequence = sweep.sequence  # Remove once new measurementLoop is added
 
 
         # Setup QDac and RF lockin
@@ -432,16 +452,20 @@ class GateScanRF():
                 num_points=num, 
                 num_traces=num_traces
             )
+        duration = self.sweeper.sweep_settings['duration']
+        timeout = max(1.5*duration, 5)
 
         # Perform measurement        
         if execute:
             self.start_RF_lockin_acquisition()
             time.sleep(0.05)
 
-            for val in sweep.sequence:
-                sweep.parameter(val)
-                if sweep.delay:
-                    sleep(sweep.delay)
+            for val in sequence:
+                if sweep is not None:
+                    if sweep.parameter is not None:
+                        sweep.parameter(val)
+                    if sweep.delay:
+                        sleep(sweep.delay)
 
                 self.sweeper.sweep(block=True)
 
@@ -449,7 +473,7 @@ class GateScanRF():
                     # clear_output()
                     print(f'Finished trace: {self.daq_raw.finished()} ({self.daq_raw.progress()[0]*100:.1f}%)')
 
-            self.wait_acquisition_complete(silent=silent)
+            self.wait_acquisition_complete(timeout=timeout, silent=silent)
             results = self.process_acquisition(remove_singleton=False)
 
             # Store data

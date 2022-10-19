@@ -3,6 +3,10 @@ from qcodes.instrument.parameter import _BaseParameter
 from qcodes.utils.metadata import Metadatable
 
 
+__all__ = [
+    'ParameterContainer'
+]
+
 def print_parameters_from_container(parameters, evaluatable=True, comment=True, newline=True):
     parameter_strings = []
 

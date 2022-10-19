@@ -5,7 +5,13 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.collections import QuadMesh
 from matplotlib.colors import LogNorm, SymLogNorm
+
+import qcodes as qc
+
 from measurement_toolkit.tools.plot_tools import create_diverging_cmap
+
+
+__all__ = ['perform_code_injections']
 
 
 def get_lim(ax, above_zero=False):
@@ -157,6 +163,18 @@ def inject_matplotlib_axis_get_colorbar():
     Axes.get_colorbar = get_colorbar
 
 
+def inject_instrument_logging_filter():
+    from qcodes.logger import get_instrument_logger as original_get_instrument_logger
+    def patched_get_instrument_logger(instrument_instance, logger_name=None):
+        logger = original_get_instrument_logger(instrument_instance=instrument_instance, logger_name=logger_name)
+        if hasattr(logger, 'filter_function'):
+            logger.logger.filters = [logger.filter_function]
+        return logger
+    qc.logger.get_instrument_logger = patched_get_instrument_logger
+    qc.instrument.instrument_base.get_instrument_logger = patched_get_instrument_logger
+inject_instrument_logging_filter()
+
+
 def perform_code_injections():
     inject_matplotlib_axis_clim()
     inject_matplotlib_axis_lim()
@@ -167,3 +185,4 @@ def perform_code_injections():
     inject_matplotlib_axis_color_left_right()
     inject_matplotlib_figure_title_functions()
     inject_matplotlib_axis_get_colorbar()
+    inject_instrument_logging_filter()

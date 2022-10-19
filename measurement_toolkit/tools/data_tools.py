@@ -15,9 +15,9 @@ __all__ = [
     'get_latest_run_id',
     'smooth',
     'retrieve_station_component',
-    'magnetic_fields',
     'modify_measurement_note',
-    'test_database'
+    'use_test_database',
+    'get_Fourier_component'
 ]
 
 def load_data(run_id, dataset_type='xarray', print_summary=True):
@@ -26,7 +26,10 @@ def load_data(run_id, dataset_type='xarray', print_summary=True):
     assert dataset_type in ['xarray', 'xarray_dict', 'pandas', 'pandas_dict', 'qcodes']
     qcodes_dataset = load_by_run_spec(captured_run_id=run_id)
     if print_summary:
-        dataset_information(qcodes_dataset, silent=False)
+        try:
+            dataset_information(qcodes_dataset, silent=False)
+        except Exception as e:
+            print(f'Could not extract system_summary: {repr(e)}')
 
     dataset = convert_to_dataset(qcodes_dataset, dataset_type=dataset_type)
 
@@ -55,7 +58,10 @@ def convert_to_dataset(dataset_or_run_id, dataset_type='xarray'):
     elif not isinstance(dataset_or_run_id, qcodes.dataset.data_set.DataSet) and dataset_type == 'qcodes':
         dataset = load_data(dataset_or_run_id, dataset_type='qcodes', print_summary=False)
     else:
-        raise NotImplementedError('This conversion has not yet been implemented')
+        raise NotImplementedError(
+            f'Conversion from {type(dataset_or_run_id)} to {dataset_type} '
+            f'has not yet been implemented' 
+        )
     # dataset.__set qcodes = qcodes_dataset
 
     return dataset
@@ -209,7 +215,7 @@ def modify_measurement_note(run_id=None):
 
 
 @contextmanager
-def test_database():
+def use_test_database():
     """
     Initializes or creates a database and restores the 'db_location' afterwards.
 

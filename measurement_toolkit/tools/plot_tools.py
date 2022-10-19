@@ -1,3 +1,4 @@
+from re import T
 import numpy as np
 from pathlib import Path
 import warnings
@@ -12,7 +13,7 @@ from matplotlib.figure import Figure
 
 from .data_tools import convert_to_dataset, dataset_information
 
-__all__ = ['plot_data', 'plot_ds', 'plot_dual_axis', 'show_image']
+__all__ = ['plot_data', 'plot_dual_axis', 'show_image']
 
 
 def plot_data(
@@ -33,9 +34,11 @@ def plot_data(
         diverging_cmap=True,
         **plot_kwargs
 ):
-
     if print_summary:
-        dataset_information(dataset, silent=False)
+        try:
+            dataset_information(dataset, silent=False)
+        except Exception as e:
+            print(f'Could not extract system_summary: {repr(e)}')
 
     # Ensure we have an xarray
     dataset = convert_to_dataset(dataset, 'xarray')
@@ -180,9 +183,6 @@ def plot_data(
         fig.tight_layout()
 
         return figure_list, axes_list
-
-# Deprecated
-plot_ds = plot_data
 
 
 def create_animation(filename, figs, fps=1):

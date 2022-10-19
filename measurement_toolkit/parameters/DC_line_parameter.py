@@ -14,6 +14,10 @@ from qcodes.station import Station
 from qcodes.utils import validators as vals
 
 
+__all__ = [
+    'DCLine'
+]
+
 this = sys.modules[__name__]  # Allows setting of variables via 'setattr(this, name, value)'
 
 
@@ -153,7 +157,6 @@ class DCLine(Parameter):
         self.voltage_scale = 1 if (pd.isna(voltage_scale) or voltage_scale is None) else voltage_scale
         self.AC_line = None if pd.isna(AC_line) else int(AC_line)
         self.RF_line = None if pd.isna(RF_line) else RF_line
-        self.DAC_channel = None if pd.isna(DAC_channel) else int(DAC_channel)
         self.skip = None if pd.isna(skip) else bool(skip)
         self.leakage = None if pd.isna(leakage) else bool(leakage)
         self.notes = notes
@@ -161,6 +164,8 @@ class DCLine(Parameter):
         self.verify_no_leakage = verify_no_leakage
         self.lockin_out = None if pd.isna(lockin_out) else int(lockin_out)
         self.lockin_in = None if pd.isna(lockin_in) else int(lockin_in)
+        self._V_min = V_min
+        self._V_max = V_max
 
         if self.line_type == 'ohmic':
             self.line_resistance = line_resistance
@@ -176,10 +181,35 @@ class DCLine(Parameter):
             self.breakout_box, self.breakout_idx = convert_DC_line_to_breakout(self.DC_line)
         self.breakout_idxs = [convert_DC_line_to_breakout(DC_line) for DC_line in self.DC_lines]
 
-        # Attach QDac controls if there is a connected QDac
-        if self.DAC_channel is not None:
-            self.DAC, self.V, self.I = self.attach_QDac(V_min, V_max, self.voltage_scale)
-            self.v, self.i = self.V, self.I  # Add deprecated lowercase params
+        # Set QDac DAC channel
+        if pd.isna(DAC_channel):
+            self.DAC_channel = None
+            qdac_idx = None
+        elif isinstance(DAC_channel, (float, int)): 
+            self.DAC_channel = int(DAC_channel)
+            qdac_idx = None
+        elif isinstance(DAC_channel, str) and ',' in DAC_channel:
+            qdac_idx, DAC_channel = DAC_channel.split(',')
+            self.DAC_channel = int(DAC_channel)
+
+        # Attach qdac
+        station = qc.Station.default
+        self.DAC = None
+        self.V = self.v = None
+        self.I = self.i = None
+
+        if getattr(station, 'instruments_loaded', False) and self.DAC_channel:
+            qdac_name = 'qdac' if qdac_idx is None else f'qdac{qdac_idx}'
+            qdac = self._instrument = getattr(station, qdac_name, None)
+
+            if qdac is not None:
+                self.DAC, self.V, self.I = self.attach_QDac(
+                    qdac, self._V_min, self._V_max, self.voltage_scale
+                )
+                qdac.parameters[name] = self
+            else:
+                warnings.warn(f'Could not attach {qdac_name} to {name}')
+
         # Attach lockin controls if there are connected lockins
         if self.lockin_out is not None:
             # Attach AC excitation parameter line.V_AC
@@ -214,17 +244,7 @@ class DCLine(Parameter):
             
         return repr_str
 
-    def attach_QDac(self, V_min, V_max, voltage_scale):
-        qdacs = [
-            val for key, val in qc.Instrument._all_instruments.items() 
-            if key.startswith('qdac')
-        ]
-        if not qdacs:
-            return None, None, None
-        elif len(qdacs) > 1:
-            warnings.warn(f'Found {len(qdacs)} instead of 1. Using first qdac')
-        qdac = qdacs[0]
-
+    def attach_QDac(self, qdac, V_min, V_max, voltage_scale):
         channel = qdac.channels[self.DAC_channel - 1]
 
         # Set voltage limits
@@ -246,6 +266,14 @@ class DCLine(Parameter):
             get_cmd=get_DAC_current,
             set_cmd=channel.i
         )
+
+        self.DAC = channel
+        self.V = channel.v
+        self.I = current_parameter
+        self._instrument = qdac
+        # Deprecated parameters
+        self.v = self.V
+        self.i = self.I
 
         return channel, channel.v, current_parameter
 
@@ -322,69 +350,6 @@ class DCLine(Parameter):
 
         self.cache._update_with(value=val, raw_value=val)
 
-    def sweep_to(
-            self,
-            target_voltage,
-            initial_voltage=None,
-            step=None,
-            num=None,
-            delay=None,
-            sweep=None,
-            measure=True,
-            show_progress=True,
-            plot=True,
-            **kwargs
-    ):
-        return sweep_gate_to(
-            gate=self,
-            target_voltage=target_voltage,
-            initial_voltage=initial_voltage,
-            step=step,
-            num=num,
-            delay=delay,
-            sweep=sweep,
-            measure=measure,
-            show_progress=show_progress,
-            plot=plot,
-            **kwargs
-        )
-
-    def sweep_around(
-            self,
-            dV,
-            step=None,
-            num=None,
-            delay=None,
-            sweep=None,
-            measure=True,
-            show_progress=True,
-            plot=True,
-            **kwargs
-    ):
-        # Record initial voltage, also to reset later on
-        V0 = self()
-        
-        try:
-            result = sweep_gate_to(
-                gate=self,
-                target_voltage=V0 + dV,
-                initial_voltage=V0 - dV,
-            step=step,
-            num=num,
-            delay=delay,
-            sweep=sweep,
-            measure=measure,
-            show_progress=show_progress,
-            plot=plot,
-            **kwargs
-            )
-        finally:
-            # Reset voltage to original
-            self(V0)
-
-        return result
-
-
     def bias_scan(
             self,
             max_voltage=600e-6,
@@ -392,25 +357,28 @@ class DCLine(Parameter):
             num=201,
             delay=None,
             sweep=None,
-            measure=True,
-            show_progress=True,
             plot=True,
             **kwargs
     ):
         assert self.lockin_out is not None
-        return sweep_gate_to(
-            gate=self,
-            target_voltage=max_voltage,
-            initial_voltage=-max_voltage,
-            step=step,
-            num=num,
-            delay=delay,
-            sweep=sweep,
-            measure=measure,
-            show_progress=show_progress,
-            plot=plot,
-            **kwargs
-        )
+        assert self.line_type == 'ohmic'
+
+        initial_voltage = self()
+        try:
+            dataset = self.sweep(
+                start=-max_voltage,
+                stop=max_voltage,
+                step=step,
+                num=num,
+                delay=delay,
+                sweep=sweep,
+                plot=plot,
+                **kwargs
+            )
+        finally:
+            self(initial_voltage)
+
+        return dataset
 
     def ramp_voltage(self, target_voltage, current_limit=None, delay=100e-3, step=10e-3, silent=True):
         if current_limit is None:
