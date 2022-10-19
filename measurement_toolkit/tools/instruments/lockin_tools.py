@@ -47,6 +47,7 @@ class LockinTimeParameter(Parameter):
 
 
 def configure_lockins(*lockins):
+    station = qc.Station.default
     assert station is not None
     
     # Add Xnoise and Ynoise parameters
