@@ -206,19 +206,22 @@ def initialize_config(
         add_to_station=True
     )
 
-    # Load gates
+    # Load gates and create conductance parameters
     if 'gates_file' in config.user:
-        initialize_DC_lines(
-            gates_excel_file=config.user.gates_file,
-            parameter_container=gate_voltages,
-            populate_namespace=populate_namespace
-        )
+        if Path(config.user.gates_file).exists():
+            initialize_DC_lines(
+                gates_excel_file=config.user.gates_file,
+                parameter_container=gate_voltages,
+                populate_namespace=populate_namespace
+            )
     
-    # Create conductance parameters
-    if getattr(station, 'instruments_loaded', False):
-        from measurement_toolkit.parameters import create_conductance_parameters
-        station.conductance_parameters = create_conductance_parameters(station.ohmics)
-        station.measure_params = station.conductance_parameters
+            # Create conductance parameters
+            if getattr(station, 'instruments_loaded', False):
+                from measurement_toolkit.parameters import create_conductance_parameters
+                station.conductance_parameters = create_conductance_parameters(station.ohmics)
+                station.measure_params = station.conductance_parameters
+        elif not silent:
+            print(f'Could not find gates file: {config.user.gates_file}')
 
     # Update plottr database
     if update_plottr:
@@ -249,6 +252,7 @@ def initialize_config(
         from IPython import get_ipython
         shell = get_ipython()
         if shell is not None:
-            shell.user_ns['conductance_parameters'] = station.conductance_parameters
             shell.user_ns['database'] = database
             shell.user_ns['experiment'] = experiment
+            if hasattr(station, 'conductance_parameters'):
+                shell.user_ns['conductance_parameters'] = station.conductance_parameters
