@@ -153,6 +153,8 @@ def plot_data(
 
                     # Set diverging cmap
                     cmap_kwargs = {'positive_cmap': plot_kwargs.get('cmap')}
+                    if type(diverging_cmap) != bool and isinstance(diverging_cmap, (float, int)):
+                        cmap_kwargs['center'] = diverging_cmap
                     if clim is not None:
                         cmap_kwargs['vmin'] = clim[0]
                         cmap_kwargs['vmax'] = clim[1]
