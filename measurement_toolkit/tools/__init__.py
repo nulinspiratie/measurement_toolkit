@@ -3,10 +3,11 @@ from .general_tools import *
 from .plot_tools import *
 from .data_tools import *
 from .fridge_tools import *
+from .gate_tools import *
 from .notebook_tools import *
 from .config_tools import *
 from .parameter_container import *
-from .instruments.qdac_tools import *
+from .instruments import *
 
 __all__ = []
 from . import (
@@ -18,8 +19,8 @@ from . import (
     config_tools,
     notebook_tools,
     parameter_container,
+    instruments
 )
-from .instruments import qdac_tools
 __all__ += dot_dict.__all__
 __all__ += general_tools.__all__
 __all__ += plot_tools.__all__
@@ -28,4 +29,4 @@ __all__ += fridge_tools.__all__
 __all__ += config_tools.__all__
 __all__ += notebook_tools.__all__
 __all__ += parameter_container.__all__
-__all__ += qdac_tools.__all__
+__all__ += instruments.__all__

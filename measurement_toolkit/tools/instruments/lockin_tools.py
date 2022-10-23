@@ -3,9 +3,9 @@ from functools import partial
 
 import qcodes as qc
 from qcodes import Parameter
-from qcodes.utils import validators as vals
-from measurement_toolkit.parameters import ConductanceParameter
-from measurement_toolkit.tools.general_tools import property_ignore_setter
+
+
+__all__ = ['LockinTimeParameter', 'configure_lockins', 'adapt_lockins_to_conductance_paths']
 
 
 class LockinTimeParameter(Parameter):

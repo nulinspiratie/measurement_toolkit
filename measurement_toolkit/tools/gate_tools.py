@@ -163,6 +163,7 @@ def combine_gates(
         scales=scales,
         offsets=offsets
     )
+    parameter.sweep_defaults = gates[0].sweep_defaults
     return parameter
 
 
