@@ -16,6 +16,7 @@ from . import (
     plot_tools,
     data_tools,
     fridge_tools,
+    gate_tools,
     config_tools,
     notebook_tools,
     parameter_container,
@@ -26,6 +27,7 @@ __all__ += general_tools.__all__
 __all__ += plot_tools.__all__
 __all__ += data_tools.__all__
 __all__ += fridge_tools.__all__
+__all__ += gate_tools.__all__
 __all__ += config_tools.__all__
 __all__ += notebook_tools.__all__
 __all__ += parameter_container.__all__
