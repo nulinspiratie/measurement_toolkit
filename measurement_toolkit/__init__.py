@@ -1,7 +1,12 @@
+# Disable annoying NoTagError message in qcodes
+from versioningit.logging import log
+log.disabled = True
+
 from .parameters import *
 from .tools import *
 from .measurements import *
 from .code_injections import *
+
 import qcodes as qc
 
 
