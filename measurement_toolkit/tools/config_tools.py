@@ -54,7 +54,7 @@ def update_plottr_database(database_path):
     return settings
 
 
-def load_database_from_config(create_db=False):
+def load_database_from_config(create_db=False, database_idx=None, silent=False):
     config = qc.config
 
     db_location = Path(config.core.db_location_format.format(
@@ -64,25 +64,36 @@ def load_database_from_config(create_db=False):
 
     if not db_folder.exists():
         if create_db:
-            print(f'Creating database folder {db_folder}')
             os.makedirs(db_folder)
+            if not silent:
+                print(f'Creating database folder {db_folder}')
         else:
             raise FileNotFoundError(f'Cannot open database. Database folder {db_folder} does not exist')
 
-    max_database_incrementer = 99
-    for k in range(max_database_incrementer, 0, -1):
-        db_file = db_folder / db_location.name.format(incrementer=str(k))
-        if db_file.exists():
-            break
+    if database_idx is not None:
+        db_file = db_folder / db_location.name.format(incrementer=str(database_idx))
     else:
-        if create_db:
-            db_file = db_folder / db_location.name.format(incrementer=1)
+        max_database_incrementer = 99
+        for k in range(max_database_incrementer, 0, -1):
+            db_file = db_folder / db_location.name.format(incrementer=str(k))
+            if db_file.exists():
+                break
+        
+    if not db_file.exists() and create_db:
+        db_file = db_folder / db_location.name.format(incrementer=1)
+        if not silent:
             print(f'Creating new database at {db_file}')
-            database = initialise_or_create_database_at(str(db_file))
-        else:
-            raise FileNotFoundError(f'No database found in {db_folder}. Can be created by passing kwarg "create_db=True"')
+
+    if db_file.exists():
+        database = initialise_or_create_database_at(str(db_file))
+    else:
+        raise FileNotFoundError(f'No database found in {db_folder}. Can be created by passing kwarg "create_db=True"')
 
     config.core.db_location = str(db_file)
+    if not silent:
+        print(f'Database: {qc.config.core.db_location}')
+
+    return database
 
 
 def _initialize_parameter_containers(populate_namespace=True, add_to_station=True):
@@ -123,7 +134,8 @@ def initialize_config(
     experiment_name, 
     device_name, 
     author, 
-    create_db=False, 
+    create_db=False,
+    database_idx=None, 
     use_mainfolder=True, 
     silent=False, 
     update_plottr=False,
@@ -181,8 +193,11 @@ def initialize_config(
 
     # Initialize database
     if 'db_location_format' in config.core:
-        database = load_database_from_config(create_db=create_db)
-        print(f'Database: {qc.config.core.db_location}')
+        database = load_database_from_config(
+            create_db=create_db,
+            database_idx=database_idx,
+            silent=silent
+        )
     else:
         database = initialise_database()
 
