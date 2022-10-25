@@ -34,21 +34,21 @@ class LockinTimeParameter(Parameter):
             self._delay = None
             print(f'Resetting lockin delay to {self.delay_scale*time_constant} s ({self.delay_scale}*t_lockin)')
 
-        # Update delays of DCLineParameter
-        from measurement_toolkit.parameters import DCLineParameter
-        if isinstance(getattr(DCLineParameter, 'sweep_defaults', None), dict):
-            delay = DCLineParameter.sweep_defaults.get('delay', None)
+        # Update delays of DCLine
+        from measurement_toolkit.parameters import DCLine
+        if isinstance(getattr(DCLine, 'sweep_defaults', None), dict):
+            delay = DCLine.sweep_defaults.get('delay', None)
             if delay is not None:
-                DCLineParameter.sweep_defaults['delay'] = self.delay
+                DCLine.sweep_defaults['delay'] = self.delay
             
             # Also update initial delay if too low
-            initial_delay = DCLineParameter.sweep_defaults.get('initial_delay', None)
+            initial_delay = DCLine.sweep_defaults.get('initial_delay', None)
             if initial_delay is not None and initial_delay < self.delay:
                 print(
-                    f'{DCLineParameter.sweep_defaults["initial_delay"]=}s is less '
+                    f'{DCLine.sweep_defaults["initial_delay"]=}s is less '
                     f'than t_lockin.delay={self.delay}s. Setting to {self.delay}s'
                 )
-                DCLineParameter.sweep_defaults['initial_delay'] = self.delay
+                DCLine.sweep_defaults['initial_delay'] = self.delay
 
     @property
     def delay(self):
