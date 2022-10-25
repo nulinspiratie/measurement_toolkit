@@ -15,7 +15,8 @@ __all__ = [
     'execute_file',
     'run_script',
     'create_new_notebook',
-    'configure_device_folder'
+    'configure_device_folder',
+    'update_namespace'
 ]
 
 logger = logging.getLogger(__name__)
@@ -173,7 +174,7 @@ def run_script(
     execute_file(file, globals=globals, locals=locals)
 
 
-def create_new_notebook(path, open=False, create_dirs=False):
+def create_new_notebook(path, open=False, create_dirs=False, cells=None):
     """Creates a new empty notebook"""
     path = Path(path)
 
@@ -186,6 +187,11 @@ def create_new_notebook(path, open=False, create_dirs=False):
 
         # Create notebook in folder
         notebook = nbformat.v4.new_notebook()
+
+        if cells is not None:
+            for cell in cells:
+                nbformat.v4.new_code_cell(cell)
+
         nbformat.write(notebook, path)
 
     if open:
@@ -217,6 +223,35 @@ def configure_device_folder(
         today = time.strftime("%Y-%m-%d")
         notebook_file = root_folder / f'Measurement notebooks/{today}.ipynb'
         if not notebook_file.exists():
-            create_new_notebook(notebook_file, open=True)
+            namespace_code = update_namespace(replace=False)
+            create_new_notebook(notebook_file, open=True, cells=[namespace_code])
             if not silent:
                 print(f'Created daily measurement notebook {notebook_file}')
+
+
+def update_namespace(silent=True, replace=True, separator='; '):
+    import builtins
+    builtin_types= [t  for t in builtins.__dict__.values()  if isinstance(t, type)]
+    builtin_types += [type(update_namespace)]  # function, is there a better way for this?
+
+    # Collect all elements
+    elems = []
+    for key, val in list(globals().items()):
+        var_type = val.__class__.__name__
+        text = f'{key}:{var_type}'
+
+        if type(val) in builtin_types or var_type in globals():
+            elems.append(text)
+        elif not silent:
+            print(f'Skipped {text}')
+
+    definition_code = '# Updating namespace types\n'
+    definition_code += 'function = type(update_namespace)'+separator
+    definition_code += separator.join(elems)
+
+    # Update current cell
+    if replace:
+        shell = get_ipython()
+        shell.set_next_input(definition_code, replace=True)
+    else:
+        return definition_code
