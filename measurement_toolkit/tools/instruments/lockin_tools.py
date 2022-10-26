@@ -92,10 +92,14 @@ def configure_lockins(*lockins):
 
 
 def adapt_lockins_to_conductance_paths(lockins, conductance_parameters, lockin_dependencies=(),):
+    """
+    Args:
+    - lockin_dependencies: (master_lockin, slave_lockin) pairs
+    """
     def get_master_lockin(lockin):
         try:
             return next(
-                master_lockin for slave_lockin, master_lockin in lockin_dependencies
+                master_lockin for master_lockin, slave_lockin in lockin_dependencies
                 if slave_lockin == lockin
             )
         except StopIteration:
