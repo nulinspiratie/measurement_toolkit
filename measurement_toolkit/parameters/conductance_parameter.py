@@ -35,13 +35,7 @@ class ConductanceParameter(qc.ManualParameter):
         self.values = {}
 
     def __repr__(self):
-        source_ohmics_str = '&'.join([
-            f'DC{ohmic}' for ohmic in self.excitation_line.DC_lines
-        ])
-        drain_ohmics_str = '&'.join([
-            f'DC{ohmic}' for ohmic in self.measure_line.DC_lines
-        ])
-        return f'G({source_ohmics_str} → {drain_ohmics_str})'
+        return f'G({self.excitation_line.name} → {self.measure_line.name})'
 
     @property_ignore_setter
     def label(self):
