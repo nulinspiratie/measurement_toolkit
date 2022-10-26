@@ -8,12 +8,13 @@ from matplotlib.collections import QuadMesh
 from matplotlib import pyplot as plt
 from matplotlib.ticker import FuncFormatter, EngFormatter
 from matplotlib.axis import Axis
-from matplotlib.axes import Subplot
+from matplotlib.axes import Subplot, Axes
+from matplotlib.patches import Rectangle
 from matplotlib.figure import Figure
 
 from .data_tools import convert_to_dataset, dataset_information
 
-__all__ = ['plot_data', 'plot_dual_axis', 'show_image']
+__all__ = ['plot_data', 'plot_dual_axis', 'show_image', 'prettify_figure']
 
 
 def plot_data(
@@ -320,3 +321,34 @@ def create_diverging_cmap(vmin, vmax, center=0, positive_cmap=None, negative_lim
     combined_colors = [*negative_colors, *positive_colors]
     diverging_cmap = mcolors.ListedColormap(combined_colors)
     return diverging_cmap
+
+
+def prettify_label(label):
+    elems = label.split(' and\n')
+    adjusted_elems = []
+    for elem in elems:
+        if not elem.startswith('V_'):
+            adjusted_elems.append(elem)
+            continue
+
+        subelems = elem.split(': ')[0].split('_')[1:]
+        if len(subelems) == 1:
+            adjusted_elems.append(rf'$V_\mathrm{{{subelems[0]}}}$')
+        else:
+            adjusted_elems.append(rf'$V_\mathrm{{{subelems[0]}}}^\mathrm{{{subelems[1]}}}$')
+    adjusted_elem = ' & '.join(adjusted_elems)
+
+    if label.endswith(']'):
+        unit = label.split('[')[-1][:-1]
+        adjusted_elem += f' ({unit})'
+    return adjusted_elem
+
+def prettify_figure(fig):
+    children = fig.get_children()
+    for child in children:
+        if child.get_label() == '<colorbar>':
+            continue
+        elif isinstance(child, Subplot):
+            ax = child
+            ax.set_xlabel(prettify_label(ax.get_xlabel()), fontsize=14)
+            ax.set_ylabel(prettify_label(ax.get_ylabel()), fontsize=14)
