@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Union
 import logging
 import nbformat
+from IPython import get_ipython
 
 import qcodes as qc
 
@@ -68,7 +69,6 @@ def export_notebook(notebook_name=None, input_code=False, output='html'):
     from IPython.core.display import display, HTML
     notebook_HTML_path = notebook_path.with_suffix(".html")
     display(HTML(f'<a href="{notebook_HTML_path}">{notebook_HTML_path}</a>'))
-
 
 
 def get_last_input_cells(cells=3):
