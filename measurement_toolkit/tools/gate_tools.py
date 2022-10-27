@@ -45,19 +45,21 @@ def iterate_gates(gates, sort=True, silent=False):
 
 def initialize_DC_lines(
     gates_excel_file, 
+    sample_holder='QDevil',
     qdac=None, 
     populate_namespace=True,
     update_monitor=True,
     parameter_container=None,
     silent=False
 ):
+    assert sample_holder in ['QDevil', 'Sydney']
     gates_table = pd.read_excel(gates_excel_file, skiprows=[0])
     
     lines = {}
     for idx, row in gates_table.iterrows():
         if row['skip']:
             continue
-        line = DCLine(**row)
+        line = DCLine(**row, sample_holder=sample_holder)
         lines[row['name']] = line
 
     DC_gates = {name: line for name, line in lines.items() if line.line_type == 'gate'}

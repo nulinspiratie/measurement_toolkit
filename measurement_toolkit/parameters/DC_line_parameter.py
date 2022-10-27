@@ -21,6 +21,15 @@ __all__ = [
 this = sys.modules[__name__]  # Allows setting of variables via 'setattr(this, name, value)'
 
 
+LINE_RESISTANCES = {
+    'QDevil': {
+        'DC': 2950,
+        'RF': 4140,
+        'AC': 59000,
+    }
+}
+
+
 def convert_DC_line_to_breakout(DC_line):
     assert 0 < DC_line < 100
     # DC lines 25, 26, 51 are skipped
@@ -42,6 +51,7 @@ def convert_breakout_to_DC_line(breakout_box, breakout_idx):
     elif breakout_box == 2:
         DC_line += 2
     return DC_line
+
 
 def sweep_gate_to(
         gate,
@@ -123,6 +133,7 @@ class DCLine(Parameter):
         breakout_idx: int,
         V_min: float,
         V_max: float,
+        sample_holder='QDevil',
         lockin_out: int = None,
         lockin_in: int = None,
         voltage_scale: float = None,
@@ -168,7 +179,15 @@ class DCLine(Parameter):
         self._V_max = V_max
 
         if self.line_type == 'ohmic':
-            self.line_resistance = line_resistance
+            if line_resistance is None or pd.isna(line_resistance):
+                if self.RF_line is not None:
+                    self.line_resistance = LINE_RESISTANCES[sample_holder]['RF']
+                elif self.AC_line is not None:
+                    self.line_resistance = LINE_RESISTANCES[sample_holder]['AC']
+                else:
+                    self.line_resistance = LINE_RESISTANCES[sample_holder]['DC']
+            else:
+                self.line_resistance = line_resistance
 
         # Determine DC breakout idxs from DC lines
         if breakout_idx is not None and breakout_idx != ' ' and not np.isnan(breakout_idx):

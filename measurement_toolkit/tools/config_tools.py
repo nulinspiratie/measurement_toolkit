@@ -140,6 +140,7 @@ def initialize_config(
     silent=False, 
     update_plottr=False,
     show_device=True,
+    sample_holder='QDevil',
     configure_device_folder=False,
     populate_namespace=True,
 ):
@@ -170,6 +171,8 @@ def initialize_config(
     """
     config = qc.config
     station = qc.Station.default
+
+    assert sample_holder in ['QDevil', 'Sydney']
 
     # Load config
     if use_mainfolder:
@@ -226,6 +229,7 @@ def initialize_config(
         if Path(config.user.gates_file).exists():
             initialize_DC_lines(
                 gates_excel_file=config.user.gates_file,
+                sample_holder=sample_holder,
                 parameter_container=gate_voltages,
                 populate_namespace=populate_namespace
             )
