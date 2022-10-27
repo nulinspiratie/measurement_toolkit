@@ -190,7 +190,7 @@ def create_new_notebook(path, open=False, create_dirs=False, cells=None):
 
         if cells is not None:
             for cell in cells:
-                nbformat.v4.new_code_cell(cell)
+                notebook['cells'].append(nbformat.v4.new_code_cell(cell))
 
         nbformat.write(notebook, path)
 
@@ -224,7 +224,7 @@ def configure_device_folder(
         notebook_file = root_folder / f'Measurement notebooks/{today}.ipynb'
         if not notebook_file.exists():
             namespace_code = update_namespace(replace=False)
-            create_new_notebook(notebook_file, open=True, cells=[namespace_code])
+            create_new_notebook(notebook_file, open=True, cells=[namespace_code, ""])
             if not silent:
                 print(f'Created daily measurement notebook {notebook_file}')
 
