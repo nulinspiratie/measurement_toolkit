@@ -119,6 +119,9 @@ def _initialize_parameter_containers(populate_namespace=True, add_to_station=Tru
             station.remove_component('system_summary')
         station.add_component(gate_voltages)
         station.add_component(system_summary)
+        
+        if hasattr(station, 'instruments_summary'):
+            system_summary.nested_containers['instruments_summary'] = station.instruments_summary
     
     if populate_namespace:
         from IPython import get_ipython
