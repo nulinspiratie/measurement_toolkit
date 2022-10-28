@@ -35,6 +35,9 @@ def plot_data(
         diverging_cmap=True,
         **plot_kwargs
 ):
+    if axes is None:
+        plt.show()
+
     if print_summary:
         try:
             dataset_information(dataset, silent=False)
