@@ -1,4 +1,3 @@
-from re import T
 import numpy as np
 from pathlib import Path
 import warnings
@@ -330,15 +329,22 @@ def prettify_label(label):
     elems = label.split(' and\n')
     adjusted_elems = []
     for elem in elems:
-        if not elem.startswith('V_'):
-            adjusted_elems.append(elem)
-            continue
-
-        subelems = elem.split(': ')[0].split('_')[1:]
-        if len(subelems) == 1:
-            adjusted_elems.append(rf'$V_\mathrm{{{subelems[0]}}}$')
+        if elem.startswith('V_'):
+            subelems = elem.split(': ')[0].split('_')[1:]
+            if len(subelems) == 1:
+                adjusted_elems.append(rf'$V_\mathrm{{{subelems[0]}}}$')
+            else:
+                adjusted_elems.append(rf'$V_\mathrm{{{subelems[0]}}}^\mathrm{{{subelems[1]}}}$')
+        elif elem.startswith('Vo_'):
+            elem = elem.split(': ')[0]
+            elem = elem.split(' bias voltage')[0]
+            subelems = elem.split('_')[1:]
+            if len(subelems) == 1:
+                adjusted_elems.append(rf'$V_\mathrm{{ohmic\,\,{subelems[0]}}}$ bias')
+            else:
+                adjusted_elems.append(rf'$V_\mathrm{{ohmic\,\,{subelems[0]}}}^\mathrm{{{subelems[1]}}}$ bias')
         else:
-            adjusted_elems.append(rf'$V_\mathrm{{{subelems[0]}}}^\mathrm{{{subelems[1]}}}$')
+            adjusted_elems.append(elem)
     adjusted_elem = ' & '.join(adjusted_elems)
 
     if label.endswith(']'):
@@ -346,7 +352,9 @@ def prettify_label(label):
         adjusted_elem += f' ({unit})'
     return adjusted_elem
 
-def prettify_figure(fig):
+def prettify_figure(fig=None):
+    if fig is None:
+        fig = plt.gcf()
     children = fig.get_children()
     for child in children:
         if child.get_label() == '<colorbar>':
