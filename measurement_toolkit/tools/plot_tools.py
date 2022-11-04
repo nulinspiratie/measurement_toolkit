@@ -13,7 +13,7 @@ from matplotlib.figure import Figure
 
 from .data_tools import convert_to_dataset, dataset_information
 
-__all__ = ['plot_data', 'plot_dual_axis', 'show_image', 'prettify_figure']
+__all__ = ['plot_data', 'plot_dual_axis', 'show_image', 'prettify_figure', 'create_animation']
 
 
 def plot_data(
