@@ -234,7 +234,8 @@ def initialize_config(
                 gates_excel_file=config.user.gates_file,
                 sample_holder=sample_holder,
                 parameter_container=gate_voltages,
-                populate_namespace=populate_namespace
+                populate_namespace=populate_namespace,
+                silent=silent
             )
     
             # Create conductance parameters
