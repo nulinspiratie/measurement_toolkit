@@ -79,12 +79,13 @@ def load_database_from_config(create_db=False, database_idx=None, silent=False):
             if db_file.exists():
                 break
         
-    if not db_file.exists() and create_db:
+    
+    if db_file.exists():
+        database = initialise_or_create_database_at(str(db_file))
+    elif create_db:
         db_file = db_folder / db_location.name.format(incrementer=1)
         if not silent:
             print(f'Creating new database at {db_file}')
-
-    if db_file.exists():
         database = initialise_or_create_database_at(str(db_file))
     else:
         raise FileNotFoundError(f'No database found in {db_folder}. Can be created by passing kwarg "create_db=True"')
