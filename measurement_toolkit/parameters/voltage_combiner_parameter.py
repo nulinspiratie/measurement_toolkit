@@ -35,31 +35,3 @@ class VoltageCombinerParameter(Parameter):
         print(f'{self.name}({self():.8g})')
         print(f'{self.name}.coarse_voltage_parameter({self.coarse_voltage_parameter():.8g})  # raw {float(self.coarse_voltage_parameter.raw_value):.8g}')
         print(f'{self.name}.fine_voltage_parameter({self.fine_voltage_parameter():.8g})  # raw {float(self.fine_voltage_parameter.raw_value):.8g}')
-
-
-    def sweep_to(
-            self,
-            target_voltage,
-            initial_voltage=None,
-            step=None,
-            num=None,
-            delay=None,
-            sweep=None,
-            measure=True,
-            show_progress=True,
-            plot=True,
-            **kwargs
-    ):
-        return sweep_gate_to(
-            gate=self,
-            target_voltage=target_voltage,
-            initial_voltage=initial_voltage,
-            step=step,
-            num=num,
-            delay=delay,
-            sweep=sweep,
-            measure=measure,
-            show_progress=show_progress,
-            plot=plot,
-            **kwargs
-        )
