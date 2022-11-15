@@ -30,6 +30,8 @@ def measure_ohmic_combinations(
     with MeasurementLoop('Ohmic_tests') as msmt:
         # Add ohmics to metadata
         msmt.dataset.add_metadata('ohmics', str([o.name for o in ohmics]))
+        line_resistances = {ohmic.name: ohmic.line_resistance for ohmic in ohmics}
+        msmt.dataset.add_metadata('line_resistances', str(line_resistances))
 
         # Perform initial actions
         for action, args in initial_actions:
