@@ -5,7 +5,6 @@ from functools import partial
 import numpy as np
 import qcodes as qc
 from measurement_toolkit.parameters.general_parameters import CombinedParameter
-from measurement_toolkit.parameters.DC_line_parameter import sweep_gate_to
 from qcodes.dataset.data_set import load_by_run_spec
 from qcodes.utils import validators as vals
 

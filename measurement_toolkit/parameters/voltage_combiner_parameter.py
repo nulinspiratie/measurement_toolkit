@@ -1,5 +1,4 @@
 from qcodes import Parameter
-from measurement_toolkit.parameters.DC_line_parameter import sweep_gate_to
 
 
 class VoltageCombinerParameter(Parameter):
