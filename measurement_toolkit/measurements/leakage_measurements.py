@@ -1,7 +1,9 @@
 from time import sleep
+import ast
 import sys
 import numpy as np
 from ..tools.gate_tools import iterate_gates
+from ..tools.data_tools import load_data
 
 """
 Example:
@@ -13,7 +15,8 @@ for gate in iterate_gates(gates, sort=True):
 __all__ = [
     'measure_leakage',
     'measure_gate_leakage',
-    'measure_gate_leakages'
+    'measure_gate_leakages',
+    'analyse_gate_leakages',
 ]
 
 
@@ -187,3 +190,26 @@ def measure_gate_leakages(
             
     print(f'Finished measuring leakages, run id #{msmt.dataset.run_id}')
     return msmt
+
+
+def analyse_gate_leakages(data_idx, gate_names=None):
+    data = load_data(data_idx)
+
+    if gate_names is None:
+        if 'gates' in data.attrs:
+            gate_names = ast.literal_eval(data.attrs['gates'])
+        else:
+            raise SyntaxError('Cannot determine gate names, please add manually')
+
+    for gate_name, is_leaking in zip(gate_names, data.leakage):
+        print(f'Gate {gate_name} is {"not " if not is_leaking else ""}leaking')
+        
+    for k, arr in enumerate(data.leakage_current):
+        fig, ax = plt.subplots()
+        arr.plot(cmap='bwr')
+        ax.set_title(f'Sweep gate {gate_names[k]}')
+        ax.set_xlabel('Gate current')
+        ax.set_xticks(range(len(gate_names)))
+        ax.set_xticklabels(gate_names, rotation=35)
+
+    return fig, ax
