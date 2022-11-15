@@ -1,17 +1,24 @@
 import numpy as np
 from time import sleep
 
+import qcodes as qc
 from qcodes.dataset import MeasurementLoop, Sweep
 from measurement_toolkit.tools.gate_tools import iterate_gates
 from measurement_toolkit.tools.data_tools import load_data
+
+
+__all__ = [
+    'measure_ohmic_combinations',
+    'measure_ohmic_combinations_keithley',
+    'analyse_ohmic_combinations',
+]
+
 
 def measure_ohmic_combinations(
     ohmics, 
     voltages, 
     voltage_set_parameter,
     current_get_parameter,
-    initial_actions=(), 
-    final_actions=(),
     delay=0.1,
 ):
     # Measure ohmic matrix using a singular voltage source and current measurement
@@ -32,13 +39,6 @@ def measure_ohmic_combinations(
         msmt.dataset.add_metadata('ohmics', str([o.name for o in ohmics]))
         line_resistances = {ohmic.name: ohmic.line_resistance for ohmic in ohmics}
         msmt.dataset.add_metadata('line_resistances', str(line_resistances))
-
-        # Perform initial actions
-        for action, args in initial_actions:
-            action(*args)
-        # Register final actions
-        for action, args in final_actions:
-            msmt.final_actions.append(action)
 
         # Create iterator for source ohmics, handles print statements
         source_ohmic_iterator = iterate_gates(
@@ -72,6 +72,32 @@ def measure_ohmic_combinations(
                 msmt.measure(resistance, 'resistance', unit='ohm')
     print(f'Measurement finished')
 
+
+def measure_ohmic_combinations_Keithley(
+    ohmics, 
+    voltages, 
+    channel='B',
+    delay=0.1,
+    keithley=None,
+):
+    assert channel in 'AB'
+    if keithley is None:
+        keithley = qc.Station.default.keithley
+    channel = getattr(keithley, f'smu{channel}')
+
+    with MeasurementLoop('Measure_ohmics_Keithley') as msmt:
+        msmt.mask(channel.volt, 0)
+        msmt.mask(channel.output, 'on')
+        msmt.mask(channel.sourcerange_v, 0.2)
+        msmt.mask(channel.limiti, 100e-9)
+
+        return measure_ohmic_combinations(
+            ohmics=ohmics,
+            voltages=voltages,
+            voltage_set_parameter=channel.volt,
+            current_get_parameter=channel.curr,
+            delay=delay
+        )
 
 def analyse_ohmic_combinations(data_idx, resistance_max=100e3):
     data = load_data(data_idx)
