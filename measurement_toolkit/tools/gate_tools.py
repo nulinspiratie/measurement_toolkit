@@ -15,29 +15,41 @@ __all__ = [
     'check_gate_leakages'
 ]
 
-def iterate_gates(gates, sort=True, silent=False):
+def iterate_gates(gates, sort=True, silent=False, active_switch=None, inactive_switch='float'):
     assert all(gate.DC_line is not None for gate in gates.values())
 
     if sort:
         sorted_gates = sorted(
-            gates.values(), key=lambda gate: gate.DC_line
+            gates, key=lambda gate: gate.DC_line
         )  # TODO verify this line is correct
     else:
         sorted_gates = gates
 
+    previous_gate = None
     breakout_box = None
     for gate in sorted_gates:
         if not silent:
             # Check if we should emit notification to switch breakout box
             if gate.breakout_box != breakout_box:
-                print(f"Switch to breakout box {gate.breakout_box}", flush=True)
-                input()
+                message = f"Switch to breakout box {gate.breakout_box}."
+                print(message, flush=True)
+                sleep(0.01)
+                if input("{message}\t Press 'q' to cancel") == 'q': raise KeyboardInterrupt
                 breakout_box = gate.breakout_box
 
-            print(f"Connect breakout box {gate.breakout_box} idx {gate.breakout_idx}")
+            message = f"Connect breakout box {gate.breakout_box} idx {gate.breakout_idx}"
+            if active_switch is not None:
+                message += f' to {active_switch}.'
             for breakout_idx in gate.breakout_idxs[1:]:
-                print(f"Float breakout box {gate.breakout_box} idx {gate.breakout_idx}", flush=True)
-            input()
+                message += f"\n  Float breakout box {gate.breakout_box} idx {gate.breakout_idx}."
+            if previous_gate is not None:
+                if inactive_switch == 'float':
+                    message += f"\nFloat breakout box {previous_gate.breakout_box} idx {previous_gate.breakout_idx}."
+                else:
+                    message += f"\nConnect breakout box {previous_gate.breakout_box} idx {previous_gate.breakout_idx} to {inactive_switch}."
+            print(message, flush=True)
+            sleep(0.01)
+            if input("{message}\t Press 'q' to cancel") == 'q': raise KeyboardInterrupt
 
             yield gate
     print("Finished iterating over gates")
