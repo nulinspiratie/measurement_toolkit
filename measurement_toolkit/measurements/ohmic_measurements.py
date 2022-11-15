@@ -3,7 +3,7 @@ from time import sleep
 
 from qcodes.dataset import MeasurementLoop, Sweep
 from measurement_toolkit.tools.gate_tools import iterate_gates
-
+from measurement_toolkit.tools.data_tools import load_data
 
 def measure_ohmic_combinations(
     ohmics, 
@@ -71,3 +71,36 @@ def measure_ohmic_combinations(
                 resistance = 1 / conductance
                 msmt.measure(resistance, 'resistance', unit='ohm')
     print(f'Measurement finished')
+
+
+def analyse_ohmic_combinations(data_idx, resistance_max=100e3):
+    data = load_data(data_idx)
+    
+    ohmic_labels = data.attrs['ohmics']
+
+    resistance_capped = data.resistance.copy()
+    if resistance_max is not None:
+        resistance_capped = np.abs(resistance_capped)
+        resistance_capped = resistance_capped.clip(max=resistance_max)
+
+    fig, ax = plt.subplots()
+    resistance_capped.plot()
+
+    ax.set_xlabel('Source ohmic')
+    ax.set_ylabel('Drain ohmic')
+    ax.set_xticks(range(len(ohmic_labels)))
+    ax.set_xticklabels(ohmic_labels, rotation=65)
+    ax.set_yticks(range(len(ohmic_labels)))
+    ax.set_yticklabels(ohmic_labels);
+
+    for i in range(len(ohmic_labels)):
+        for j in range(len(ohmic_labels)):
+            resistance = resistance_capped[i, j].values
+            if resistance == resistance_max:
+                resistance_str = f'>{resistance_max/1e3:.0f}'
+            else:
+                resistance_str = str(np.round(resistance / 1e3, 1))
+            text = ax.text(j, i, resistance_str,
+                        ha="center", va="center", color="r")
+    
+    return fig, ax
