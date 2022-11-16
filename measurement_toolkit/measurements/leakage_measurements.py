@@ -2,6 +2,8 @@ from time import sleep
 import ast
 import sys
 import numpy as np
+from matplotlib import pyplot as plt
+
 from ..tools.gate_tools import iterate_gates
 from ..tools.data_tools import load_data
 

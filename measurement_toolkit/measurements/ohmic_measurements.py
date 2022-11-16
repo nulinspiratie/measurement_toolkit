@@ -1,5 +1,6 @@
 import numpy as np
 from time import sleep
+from matplotlib import pyplot as plt
 
 import qcodes as qc
 from qcodes.dataset import MeasurementLoop, Sweep
