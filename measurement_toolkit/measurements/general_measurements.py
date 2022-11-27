@@ -38,7 +38,8 @@ def measure_repeatedly(
     duration,
     measure_params=None,
     t_delta=None,
-    plot=True
+    plot=True,
+    silent=False,
 ):
     station = qc.Station.default
     assert station is not None, "No station initialized"
@@ -60,6 +61,7 @@ def measure_repeatedly(
     emit_warning = True
     measurement_durations = []
     measurement_intervals = []
+    data_points = {param.name: [] for param in measure_params}
     with meas.run() as datasaver:
         time_parameter.reset()
 
@@ -69,9 +71,11 @@ def measure_repeatedly(
             t = time_parameter()
 
             for param in measure_params:
+                value = param()
+                data_points[param.name].append(value)
                 datasaver.add_result(
                     (time_parameter, t),
-                    (param, param())
+                    (param, value)
                 )
             t1 = time.perf_counter()
             measurement_durations.append(t1 - t0)
@@ -87,13 +91,18 @@ def measure_repeatedly(
             measurement_intervals.append(time.perf_counter() - t0)
             loop_index += 1
 
+    if not silent:
+        for param, values in data_points.items():
+            print(f'{param} mean value = {np.mean(values):.3g} ± {np.std(values):.3g}')
+
     if plot:
         plot_data(datasaver._dataset)
 
     return {
         'dataset': datasaver._dataset,
         'average_duration': np.mean(measurement_durations),
-        'average_interval': np.mean(measurement_intervals)
+        'average_interval': np.mean(measurement_intervals),
+        'data_points': data_points,
     }
 
 def dict_to_dataset(data_dict, measurement_name='0d_dict_to_dataset'):
