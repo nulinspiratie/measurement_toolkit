@@ -326,23 +326,26 @@ def create_diverging_cmap(vmin, vmax, center=0, positive_cmap=None, negative_lim
 
 
 def prettify_label(label):
+    # label = label.replace('\n', '')  # Remove new lines
     elems = label.split(' and\n')
     adjusted_elems = []
     for elem in elems:
         if elem.startswith('V_'):
-            subelems = elem.split(': ')[0].split('_')[1:]
+            subelems = elem.split(':')[0].split('_')[1:]
             if len(subelems) == 1:
                 adjusted_elems.append(rf'$V_\mathrm{{{subelems[0]}}}$')
             else:
-                adjusted_elems.append(rf'$V_\mathrm{{{subelems[0]}}}^\mathrm{{{subelems[1]}}}$')
+                merged_subelem = ','.join(subelems[:-1])
+                adjusted_elems.append(rf'$V_\mathrm{{{merged_subelem}}}^\mathrm{{{subelems[-1]}}}$')
         elif elem.startswith('Vo_'):
             elem = elem.split(': ')[0]
             elem = elem.split(' bias voltage')[0]
             subelems = elem.split('_')[1:]
             if len(subelems) == 1:
-                adjusted_elems.append(rf'$V_\mathrm{{ohmic\,\,{subelems[0]}}}$ bias')
+                adjusted_elems.append(rf'$V_\mathrm{{ohmic}}^\mathrm{{{subelems[0]}}}$ bias')
             else:
-                adjusted_elems.append(rf'$V_\mathrm{{ohmic\,\,{subelems[0]}}}^\mathrm{{{subelems[1]}}}$ bias')
+                merged_subelem = ','.join(subelems[:-1])
+                adjusted_elems.append(rf'$V_\mathrm{{ohmic\,\,{merged_subelem}}}^\mathrm{{{subelems[-1]}}}$ bias')
         else:
             adjusted_elems.append(elem)
     adjusted_elem = ' & '.join(adjusted_elems)
@@ -350,6 +353,7 @@ def prettify_label(label):
     if label.endswith(']'):
         unit = label.split('[')[-1][:-1]
         adjusted_elem += f' ({unit})'
+
     return adjusted_elem
 
 def prettify_figure(fig=None):
