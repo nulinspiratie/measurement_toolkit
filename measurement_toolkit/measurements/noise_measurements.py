@@ -32,6 +32,7 @@ def measure_noise_spectrum(
     mask_params = {
         measure_lockin.reference_source: 'internal' if isinstance(measure_lockin, SR830) else 'INT',
         measure_lockin.time_constant: time_constant,
+        measure_lockin.frequency: measure_lockin.frequency()
     }
 
     if source_lockin is not None:
