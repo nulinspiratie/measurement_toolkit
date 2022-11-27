@@ -113,8 +113,18 @@ class DCLine(Parameter):
         self.notes = notes
         self.tex_label = tex_label
         self.verify_no_leakage = verify_no_leakage
-        self.lockin_out = None if pd.isna(lockin_out) else int(lockin_out)
-        self.lockin_in = None if pd.isna(lockin_in) else int(lockin_in)
+        if pd.isna(lockin_out):
+            self.lockin_out = None
+        elif str(lockin_out).isdigit():
+            self.lockin_out = int(lockin_out)
+        else:
+            self.lockin_out = lockin_out
+        if pd.isna(lockin_in):
+            self.lockin_in = None
+        elif str(lockin_in).isdigit():
+            self.lockin_in = int(lockin_in)
+        else:
+            self.lockin_in = lockin_in
         self._V_min = V_min
         self._V_max = V_max
 
