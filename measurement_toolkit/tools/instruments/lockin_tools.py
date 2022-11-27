@@ -123,7 +123,7 @@ def adapt_lockins_to_conductance_paths(lockins, conductance_parameters, lockin_d
             conductance_parameter.measure_lockin.phase(0)
     for lockin in lockins:
         if lockin not in excitation_lockins:
-            lockin.amplitude(0)
+            lockin.amplitude(lockin.amplitude.vals._min_value)
 
     # First set all lockins that measures itself to internal reference
     for conductance_parameter in conductance_parameters:
