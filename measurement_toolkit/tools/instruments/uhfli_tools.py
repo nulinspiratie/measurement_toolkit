@@ -1,23 +1,38 @@
 import numpy as np
 from functools import partial
 
+from qcodes.instrument import Instrument
 
-def disable_uhfli_channels(RF_lockin):
-    # Disable all input channels
-    for input_channel in RF_lockin.sigins:
-        input_channel.on(False)
-        for demodulator in RF_lockin.demods:
-            demodulator.enable(False)
 
-    # Disable all output channels
-    for output_channel in RF_lockin.sigouts:
-        # Turn channel output off
-        output_channel.on(False)
+class UHFLI_Interface(Instrument):
+    def __init__(self, RF_lockin, name='RF_lockin', oscillator_idx=1, output_idx=1):
+        super().__init__(name=name)
 
-        for oscillator_idx in range(8):
-            # Turn off all oscillators
-            oscillator_enable_parameter = output_channel.parameters[f'enables{oscillator_idx}']
-            oscillator_enable_parameter(False)
+        self.RF_lockin = RF_lockin
+
+        self.oscillator_idx = oscillator_idx
+        self.oscillator = self.RF_lockin.oscs[oscillator_idx]
+
+        self.output_idx = output_idx
+
+    def disable_channels(self):
+        # Disable all input channels
+        for input_channel in self.sigins:
+            input_channel.on(False)
+            for demodulator in self.demods:
+                demodulator.enable(False)
+
+        # Disable all output channels
+        for output_channel in self.sigouts:
+            # Turn channel output off
+            output_channel.on(False)
+
+            for oscillator_idx in range(8):
+                # Turn off all oscillators
+                oscillator_enable_parameter = output_channel.parameters[f'enables{oscillator_idx}']
+                oscillator_enable_parameter(False)
+
+    
 
 
 def configure_uhfli_output(RF_lockin, output_idx, oscillator_idx, output_amplitude):
