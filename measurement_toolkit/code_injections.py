@@ -107,12 +107,18 @@ def inject_matplotlib_axis_logscale():
 
 def inject_matplotlib_figure_title_functions():
     def prepend_title(fig, title, separator='\n'):
-        original_title = fig._suptitle.get_text()
-        fig.suptitle(f'{title}{separator}{original_title}')
+        if fig._suptitle is not None:
+            original_title = fig._suptitle.get_text()
+            fig.suptitle(f'{title}{separator}{original_title}')
+        else:
+            fig.suptitle(title)
 
     def append_title(fig, title, separator='\n'):
-        original_title = fig._suptitle.get_text()
-        fig.suptitle(f'{original_title}{separator}{title}')
+        if fig._suptitle is not None:
+            original_title = fig._suptitle.get_text()
+            fig.suptitle(f'{original_title}{separator}{title}')
+        else:
+            fig.suptitle(title)
 
     Figure.prepend_title = prepend_title
     Figure.append_title = append_title
