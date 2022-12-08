@@ -26,6 +26,9 @@ class ConductanceParameter(qc.ManualParameter):
         self.excitation_lockin = self.excitation_line.V_AC.source.instrument
         self.measure_lockin = self.measure_line.I_AC.source.instrument
 
+        self.V_AC = self.excitation_line.V_AC
+        self.I_AC = self.measure_line.I_AC
+
         super().__init__(
             name=name,
             unit='$e^2/h$',
@@ -75,11 +78,11 @@ class ConductanceParameter(qc.ManualParameter):
         return self.excitation_line.line_resistance + self.measure_line.line_resistance
 
     def measure(self):
-        V_AC = self.excitation_line.V_AC.get_latest()
+        V_AC = self.V_AC.get_latest()
         if V_AC < 1e-7:
             warnings.warn(f'Lockin excitation {V_AC=} too low')
 
-        I_sd = self.measure_line.I_AC()
+        I_sd = self.I_AC()
 
         if I_sd != 0:
             R_total = V_AC / I_sd
