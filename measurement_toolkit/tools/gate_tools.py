@@ -122,7 +122,7 @@ def initialize_DC_lines(
                 station._monitor_parameters.remove(param)
                 
         for name, line in lines.items():
-            if hasattr(line, 'v'):
+            if hasattr(line, 'v') and line.v is not None:
                 station._monitor_parameters.append(line)
                 
         for gate in DC_line_groups['gates']:
