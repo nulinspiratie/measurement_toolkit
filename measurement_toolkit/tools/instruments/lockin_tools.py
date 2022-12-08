@@ -1,5 +1,6 @@
 import numpy as np
 from functools import partial
+from warnings import warn
 
 import qcodes as qc
 from qcodes import Parameter
@@ -105,6 +106,13 @@ def adapt_lockins_to_conductance_paths(lockins, conductance_parameters, lockin_d
         except StopIteration:
             return None
 
+    def set_reference_source(lockin, mode):
+        assert mode in ['internal', 'external']
+        from qcodes.instrument_drivers.stanford_research.SR830 import SR830
+        if not isinstance(lockin, SR830):
+            mode = 'INT' if mode == 'internal' else 'EXT'
+        lockin.reference_source(mode)
+
     excitation_lockins = {
         conductance_parameter.excitation_lockin
         for conductance_parameter in conductance_parameters
@@ -128,7 +136,7 @@ def adapt_lockins_to_conductance_paths(lockins, conductance_parameters, lockin_d
     # First set all lockins that measures itself to internal reference
     for conductance_parameter in conductance_parameters:
         if conductance_parameter.excitation_lockin == conductance_parameter.measure_lockin:
-            conductance_parameter.excitation_lockin.reference_source('INT')
+            set_reference_source(conductance_parameter.excitation_lockin, 'internal')
     
     # Then set relevant ext references depending on reference direction
     # Note that this can overwrite previous internal reference sources
@@ -138,10 +146,16 @@ def adapt_lockins_to_conductance_paths(lockins, conductance_parameters, lockin_d
             excitation_master_lockin = get_master_lockin(conductance_parameter.excitation_lockin)
             
             if measure_master_lockin == conductance_parameter.excitation_lockin:
-                conductance_parameter.measure_lockin.reference_source('EXT')
-                conductance_parameter.excitation_lockin.reference_source('INT')
+                set_reference_source(conductance_parameter.measure_lockin, 'external')
+                set_reference_source(conductance_parameter.excitation_lockin, 'internal')
             elif excitation_master_lockin == conductance_parameter.measure_lockin:
-                conductance_parameter.measure_lockin.reference_source('INT')
-                conductance_parameter.excitation_lockin.reference_source('EXT')
+                set_reference_source(conductance_parameter.excitation_lockin, 'internal')
+                set_reference_source(conductance_parameter.excitation_lockin, 'external')
             else:
-                raise ValueError('Cannot configure lockins: wrong dependency')
+                warn(
+                    'Cannot configure lockins: wrong dependency\n'
+                    f'{excitation_master_lockin=}\n'
+                    f'{conductance_parameter.excitation_lockin=}\n'
+                    f'{measure_master_lockin=}\n'
+                    f'{conductance_parameter.measure_lockin=}\n'
+                )
