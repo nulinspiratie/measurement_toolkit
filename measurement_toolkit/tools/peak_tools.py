@@ -1,3 +1,4 @@
+from time import sleep
 import qcodes as qc
 from scipy.signal import find_peaks
 import numpy as np
@@ -12,7 +13,10 @@ from qcodes.dataset import (
     load_by_run_spec,
     load_or_create_experiment,
 )
-from measurement_toolkit.tools.data_tools import smooth
+from measurement_toolkit.tools.data_tools import smooth, convert_to_dataset
+
+
+__all__ = ['extract_dataset_peaks', 'goto_next_peak', 'goto_nearest_peak']
 
 
 def convert_data_to_xarray(run_id=None, plot=False):
@@ -124,3 +128,112 @@ def extract_peaks(
         'idxs': idx_peaks,
         'axes': [ax_peaks]
     }
+
+
+def extract_dataset_peaks(dataset, measure_param=None, silent=False,  prominence=0.05, **kwargs):
+    station = qc.Station.default
+    if measure_param is None and hasattr(station, 'default_measure_param'):
+        measure_param = station.default_measure_param
+        
+    dataset = convert_to_dataset(dataset, 'xarray')
+        
+    if measure_param is not None:
+        arr = getattr(dataset, measure_param.name)
+    else:    
+        arr = next(iter(dataset.data_vars.values()))
+    xvals = next(iter(arr.coords.values()))
+
+    peak_idxs, _ = find_peaks(arr.values, prominence=prominence, **kwargs)
+    peak_xvals = xvals[peak_idxs].values
+    peak_yvals = arr[peak_idxs].values
+
+    if not silent:
+        print(f'Found {len(peak_idxs)} peaks at voltages {list(peak_xvals)}')
+    
+    if not silent:
+        arr.plot()
+        plt.plot(peak_xvals, peak_yvals, marker='*', ms=12, linestyle='')
+    return peak_xvals, peak_yvals
+
+
+def goto_peak(gate, method='next', around=10e-3, num=101, measure_param=None, silent=False, prominence=0.05, peak_shift=None, **kwargs):
+    assert method in ['next', 'nearest']
+
+    station = qc.Station.default
+    if measure_param is None:
+        measure_param = station.default_measure_param
+    dataset = gate.sweep(around=around, num=num, plot=False, measure_params=[measure_param], initial_delay=7*station.t_lockin())
+
+    peak_xvals, peak_yvals = extract_dataset_peaks(dataset, measure_param=measure_param, silent=silent, prominence=prominence, **kwargs)
+
+    V0 = gate()
+    # Find peak satisfying method criteria
+    if not len(peak_xvals):
+        success = False
+        peak_xval = None
+    elif method == 'nearest':
+        peak_idx = np.argmin(np.abs(peak_xvals - V0))
+        peak_xval = peak_xvals[peak_idx]
+        success = True
+    elif method == 'next':
+        for peak_idx, peak_xval in enumerate(peak_xvals):
+            if peak_xval > V0:
+                success = True
+                break
+        else:
+            success = False
+
+    if success:
+        print(f'Going to peak {peak_idx+1} at voltage {gate.name}({peak_xval})')
+        gate(peak_xval)
+
+        sleep(1)
+        peak_yval = measure_param()
+        print(f'Conductance at peak: {measure_param.name} = {peak_yval}')
+        if not silent:
+            plt.plot(peak_xval, peak_yval, marker='*', ms=12, linestyle='', color='g')
+
+        # Optionally also shift from the peak
+        if peak_shift is not None:
+            shift_xval = peak_xval + peak_shift
+            gate(shift_xval)
+            sleep(1)
+            shift_yval = measure_param()
+            print(f'Conductance {peak_shift} mV from peak: {measure_param.name} = {shift_yval}')
+            if not silent:
+                plt.plot(shift_xval, shift_yval, marker='*', ms=12, linestyle='', color='g')
+    else:
+        print(f'Did not find a peak past current voltage {gate.name} = {V0} V')
+
+    return {
+        'success': success,
+        'peak_xval': peak_xval,
+        'peak_xvals': peak_xvals,
+        'peak_yvals': peak_yvals,
+    }
+
+def goto_next_peak(gate, around=10e-3, num=101, measure_param=None, silent=False, prominence=0.05, peak_shift=None, **kwargs):
+    return goto_peak(
+        gate=gate, 
+        method='next', 
+        around=around, 
+        num=num, 
+        measure_param=measure_param,
+        silent=False,
+        prominence=prominence,
+        peak_shift=peak_shift,
+        **kwargs
+    )
+
+def goto_nearest_peak(gate, around=20e-3, num=151, measure_param=None, silent=False, prominence=0.05, peak_shift=None, **kwargs):
+    return goto_peak(
+        gate=gate, 
+        method='nearest', 
+        around=around, 
+        num=num, 
+        measure_param=measure_param,
+        silent=False,
+        prominence=prominence,
+        peak_shift=peak_shift,
+        **kwargs
+    )
