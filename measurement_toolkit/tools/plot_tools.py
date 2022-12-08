@@ -118,11 +118,20 @@ def plot_data(
             fig_axes = axes
             fig = fig_axes[0].get_figure()
 
+        if np.ndim(fig_axes) == 0:
+            fig_axes_1D = [fig_axes]
+        elif np.ndim(fig_axes) == 1:
+            fig_axes_1D = fig_axes
+        elif np.ndim(fig_axes) == 2:
+            fig_axes_1D = [ax for axes_row in fig_axes for ax in axes_row]
+        else:
+            raise RuntimeError('Figure axes shape not understood')
+
 
         figure_list.append(fig)
         axes_list.append(fig_axes) 
 
-        for ax, array_labels in zip(fig_axes, figure_structure):
+        for ax, array_labels in zip(fig_axes_1D, figure_structure):
             for array_label in array_labels:
                 array = dataset.data_vars[array_label]
                 if array.ndim == 2 and transpose:
