@@ -3,6 +3,8 @@ from .general_tools import *
 from .plot_tools import *
 from .data_tools import *
 from .fridge_tools import *
+from .peak_tools import *
+from .analysis_tools import *
 from .gate_tools import *
 from .notebook_tools import *
 from .config_tools import *
@@ -16,6 +18,8 @@ from . import (
     plot_tools,
     data_tools,
     fridge_tools,
+    peak_tools,
+    analysis_tools,
     gate_tools,
     config_tools,
     notebook_tools,
@@ -27,6 +31,8 @@ __all__ += general_tools.__all__
 __all__ += plot_tools.__all__
 __all__ += data_tools.__all__
 __all__ += fridge_tools.__all__
+__all__ += peak_tools.__all__
+__all__ += analysis_tools.__all__
 __all__ += gate_tools.__all__
 __all__ += config_tools.__all__
 __all__ += notebook_tools.__all__
