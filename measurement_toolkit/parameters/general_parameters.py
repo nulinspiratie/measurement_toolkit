@@ -15,6 +15,27 @@ __all__ = [
     'RepetitionParameter'
 ]
 
+class _OffsetParameter(Parameter):
+    def __init__(self, parameter, combined_parameter):
+        super().__init__(
+            name=f'{parameter.name}_offset', 
+            label=f'{parameter.label} offset',
+            unit=parameter.unit
+        )
+        self.combined_parameter = combined_parameter
+        self.parameter = parameter
+
+        self._value = 0
+
+    def set_raw(self, value):
+        combined_val = self.combined_parameter.get_latest()
+        self._value = value
+        self.combined_parameter(combined_val)
+        
+    def get_raw(self):
+        return self._value
+
+
 
 class CombinedParameter(Parameter):
     delay_between_set = None
@@ -67,6 +88,11 @@ class CombinedParameter(Parameter):
         self.max_difference = max_difference
         self.precision = precision
 
+        self.offset_parameters = {
+            parameter.name: _OffsetParameter(parameter=parameter, combined_parameter=self)
+            for parameter in parameters
+        }
+
         self.full_label = full_label
 
         super().__init__(name, label=label, unit=unit, **kwargs)
@@ -111,6 +137,10 @@ class CombinedParameter(Parameter):
                        zip(self.parameters, self.scales)]
         else:
             self.offsets = [param() for param in self.parameters]
+
+        # Also set the offsets to zero
+        for parameter in self.offset_parameters.values():
+            parameter._value = 0
         return self.offsets
 
     def calculate_individual_values(self, value):
@@ -127,12 +157,15 @@ class CombinedParameter(Parameter):
                 val *= self.scales[k]
             if self.offsets is not None:
                 val += self.offsets[k]
+            val += self.offset_parameters[parameter.name]()
             vals.append(val)
 
         return vals
 
     def get_raw(self):
         raw_values = values = [param() for param in self.parameters]
+
+        values = [value - offset_parameter() for value, offset_parameter in zip(values, self.offset_parameters.values())]
 
         if self.offsets is not None:
             values = [value - offset for value, offset in zip(values, self.offsets)]
