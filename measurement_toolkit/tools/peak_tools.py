@@ -202,6 +202,7 @@ def goto_peak(gate, method='next', around=10e-3, num=101, measure_param=None, si
             print(f'Conductance {peak_shift} mV from peak: {measure_param.name} = {shift_yval}')
             if not silent:
                 plt.plot(shift_xval, shift_yval, marker='*', ms=12, linestyle='', color='g')
+            plt.show()
     else:
         print(f'Did not find a peak past current voltage {gate.name} = {V0} V')
 
