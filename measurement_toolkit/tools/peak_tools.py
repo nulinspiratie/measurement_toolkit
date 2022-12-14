@@ -12,8 +12,11 @@ from qcodes.dataset import (
     initialise_or_create_database_at,
     load_by_run_spec,
     load_or_create_experiment,
+    MeasurementLoop,
+    Sweep,
 )
 from measurement_toolkit.tools.data_tools import smooth, convert_to_dataset
+from measurement_toolkit.tools.plot_tools import plot_data
 
 
 __all__ = ['extract_dataset_peaks', 'goto_next_peak', 'goto_nearest_peak']
@@ -226,7 +229,7 @@ def goto_next_peak(gate, around=10e-3, num=101, measure_param=None, silent=False
         **kwargs
     )
 
-def goto_nearest_peak(gate, around=20e-3, num=151, measure_param=None, silent=False, prominence=0.05, peak_shift=None, **kwargs):
+def goto_nearest_peak(gate, around=10e-3, num=151, measure_param=None, silent=False, prominence=0.05, peak_shift=None, **kwargs):
     return goto_peak(
         gate=gate, 
         method='nearest', 
@@ -238,3 +241,84 @@ def goto_nearest_peak(gate, around=20e-3, num=151, measure_param=None, silent=Fa
         peak_shift=peak_shift,
         **kwargs
     )
+
+
+def goto_next_charge_transition(
+    charge_transition_parameter,
+    compensation_parameter,
+    dV_max = 0.1,
+    V_step=0.0005,
+    max_flank_attempts=20,
+    target_accuracy=0.1,
+    silent=True
+):
+    delay = qc.Station.default.t_lockin()
+
+    # First go to flank of Coulomb peak
+    compensating_gate = compensation_parameter.compensating_gate
+    V0 = compensating_gate()
+    with MeasurementLoop('goto_flank') as msmt:
+        for k in Sweep(range(max_flank_attempts), 'repetition'):
+            msmt.measure(compensation_parameter)
+            conductance_error = compensation_parameter.results['conductance_error']
+            target_conductance = compensation_parameter.target_conductance
+            accuracy = np.abs(conductance_error /  target_conductance)
+            if accuracy < target_accuracy:
+                success = True
+                msmt.step_out()
+                break
+            sleep(delay)
+        else:
+            success = False
+        msmt.measure(success, 'success')
+
+    if not silent:
+        plot_compensated_charge_transition_measurement(msmt.dataset, print_summary=False)
+        plt.show()
+
+    if not success:
+        print(f'Did not find Coulomb peak flank, reverting {compensating_gate} back to {V0}')
+        compensating_gate(V0)
+        return
+
+    # V0_charge = charge_transition_parameter()
+    # with MeasurementLoop('goto_charge_transition') as msmt:
+    #     for V in Sweep(charge_transition_parameter, V0_charge, V0_charge + dV_max,  step=V_step):
+    #         msmt.measure(compensation_parameter)
+
+    # if not silent:
+    #     plot_compensated_charge_transition_measurement(msmt.dataset, print_summary=False)
+    #     plt.show()
+    
+
+def plot_compensated_charge_transition_measurement(data, print_summary=True):
+    data = convert_to_dataset(data)
+
+    fig, axes = plt.subplots(3, figsize=(6,6), sharex=True)
+
+    s = '0' if hasattr(data, 'success') else ''
+
+    ax = axes[0]
+    plot_data(data, f'[0[11]00{s}00]', axes=ax, print_summary=print_summary, marker='o')
+    ax.legend(['conductance', 'Conductance error'])
+    ax.set_ylabel('Conductance (e^2/h)')
+
+    ax = axes[1]
+    plot_data(data, f'[00001{s}00]', axes=ax, print_summary=False, marker='o')
+    plot_data(data, f'[00000{s}10]', axes=ax, print_summary=False, marker='o')
+    ax.legend(['Initial voltage', 'Target voltage'])
+    ax.set_ylabel('Voltage (V)')
+    
+    ax = axes[2]
+    plot_data(data, f'[10000{s}00]', axes=ax, print_summary=False, marker='o')
+    plot_data(data, f'[00010{s}00]', axes=ax, print_summary=False, marker='o')
+    plot_data(data, f'[00000{s}01]', axes=ax, print_summary=False, marker='o')
+    ax.legend(['Capacitive compensation', 'Conductance error compensation', 'Total compensation'])
+    ax.set_ylabel('Voltage compensation (V)')
+
+    
+    if hasattr(data, 'success'):
+        fig.append_title(f'Successfully reached within tolerance: {bool(data.success)}')
+        fig.tight_layout()
+
+    return fig, axes
