@@ -96,14 +96,14 @@ def plot_data(
     axes_list = []
     for figure_structure in structure:
         num_axes = len(figure_structure)
-        if num_axes < 3:
+        if num_axes < 3: # One or 2 axes -> single row
             rows, columns = 1, num_axes
-        elif not num_axes % 3:
+        elif not num_axes % 3:  # Multiple of 3 -> 3 columns
             rows, columns = num_axes // 3, 3
-        elif not (num_axes + num_axes % 2) % 3:
+        elif not (num_axes + num_axes % 2) % 3:  # Odd+1 is even, multiple of 3 -> 3 columns
             rows, columns = (num_axes + 1) // 3, 3
-        else:
-            rows, columns = (num_axes + 1) % 2, 2
+        else:  # 2 columns
+            rows, columns = (num_axes + 1) // 2, 2
 
         if axes is None:
             if figsize is None:
@@ -116,7 +116,10 @@ def plot_data(
             if isinstance(axes, (Axis, Subplot)):
                 axes = [axes]
             fig_axes = axes
-            fig = fig_axes[0].get_figure()
+            if np.ndim(fig_axes) == 1:
+                fig = fig_axes[0].get_figure()
+            else:
+                fig = fig_axes[0][0].get_figure()
 
         if np.ndim(fig_axes) == 0:
             fig_axes_1D = [fig_axes]
