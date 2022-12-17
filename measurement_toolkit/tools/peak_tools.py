@@ -1,3 +1,4 @@
+import xarray
 from time import sleep
 import qcodes as qc
 from scipy.signal import find_peaks
@@ -133,29 +134,56 @@ def extract_peaks(
     }
 
 
-def extract_dataset_peaks(dataset, measure_param=None, silent=False,  prominence=0.05, **kwargs):
+def extract_dataset_peaks(dataset_or_arr, measure_param=None, silent=False, negative=False, prominence=0.05, **kwargs):
     station = qc.Station.default
     if measure_param is None and hasattr(station, 'default_measure_param'):
         measure_param = station.default_measure_param
-        
-    dataset = convert_to_dataset(dataset, 'xarray')
-        
-    if measure_param is not None:
-        arr = getattr(dataset, measure_param.name)
-    else:    
-        arr = next(iter(dataset.data_vars.values()))
-    xvals = next(iter(arr.coords.values()))
+    if isinstance(dataset_or_arr, (np.ndarray, xarray.DataArray)):
+        arr = dataset_or_arr
+        arrs = [arr]
+    elif isinstance(dataset_or_arr, list):
+        arr = dataset_or_arr[0]
+        arrs = dataset_or_arr
+    else:
+        dataset = convert_to_dataset(dataset_or_arr, 'xarray')
+        arrs = list(dataset.data_vars.values())
+            
+        if measure_param is not None:
+            arr = next(arr for arr in arrs if arr.name == measure_param.name)
+        else:    
+            arr = arrs[0]
+    xvals = list(arr.coords.values())[-1] 
 
-    peak_idxs, _ = find_peaks(arr.values, prominence=prominence, **kwargs)
-    peak_xvals = xvals[peak_idxs].values
-    peak_yvals = arr[peak_idxs].values
+    arr_positive = arr * (-1 if negative else 1)
+
+    prominences = [prominence] if isinstance(prominence, float) else prominence
+
+    for prominence in prominences:
+        peak_idxs, _ = find_peaks(arr_positive.values, prominence=prominence, **kwargs)
+        if len(peak_idxs):
+            peak_xvals = xvals[peak_idxs].values
+            peak_yvals = arr[peak_idxs].values
+            break
+    else:
+        peak_xvals, peak_yvals = [], []
 
     if not silent:
-        print(f'Found {len(peak_idxs)} peaks at voltages {list(peak_xvals)}')
+        print(f'Found {len(peak_idxs)} peaks at voltages {list(round(val, 3) for val in peak_xvals)}')
     
     if not silent:
+        fig, ax = plt.subplots()
         arr.plot()
-        plt.plot(peak_xvals, peak_yvals, marker='*', ms=12, linestyle='')
+        ax.plot(peak_xvals, peak_yvals, marker='*', ms=12, linestyle='')
+
+        try:
+            other_arrs = [arr2 for arr2 in arrs if arr2 is not arr]
+            if other_arrs:
+                ax2 = ax.twinx()
+                ax2.color_right_axis('C1')
+                for other_arr in other_arrs:
+                    other_arr.plot(ax=ax2, color='C1', )
+        except Exception:
+            print(f"Couldn't plot other data arrs")
     return peak_xvals, peak_yvals
 
 
@@ -187,12 +215,12 @@ def goto_peak(gate, method='next', around=10e-3, num=101, measure_param=None, si
             success = False
 
     if success:
-        print(f'Going to peak {peak_idx+1} at voltage {gate.name}({peak_xval})')
+        print(f'Going to peak {peak_idx+1} at voltage {gate.name}({peak_xval:.5f})')
         gate(peak_xval)
 
         sleep(1)
         peak_yval = measure_param()
-        print(f'Conductance at peak: {measure_param.name} = {peak_yval}')
+        print(f'Conductance at peak: {measure_param.name} = {peak_yval:.3f}')
         if not silent:
             plt.plot(peak_xval, peak_yval, marker='*', ms=12, linestyle='', color='g')
 
@@ -202,7 +230,7 @@ def goto_peak(gate, method='next', around=10e-3, num=101, measure_param=None, si
             gate(shift_xval)
             sleep(1)
             shift_yval = measure_param()
-            print(f'Conductance {peak_shift} mV from peak: {measure_param.name} = {shift_yval}')
+            print(f'Conductance {peak_shift} mV from peak: {measure_param.name} = {shift_yval:.3f}')
             if not silent:
                 plt.plot(shift_xval, shift_yval, marker='*', ms=12, linestyle='', color='g')
             plt.show()
@@ -242,12 +270,11 @@ def goto_nearest_peak(gate, around=10e-3, num=151, measure_param=None, silent=Fa
         **kwargs
     )
 
-
 def goto_next_charge_transition(
     charge_transition_parameter,
     compensation_parameter,
     dV_max = 0.1,
-    V_step=0.0005,
+    V_step=0.001,
     max_flank_attempts=20,
     target_accuracy=0.1,
     silent=True
@@ -267,7 +294,7 @@ def goto_next_charge_transition(
                 success = True
                 msmt.step_out()
                 break
-            sleep(delay)
+            sleep(2.5*delay)
         else:
             success = False
         msmt.measure(success, 'success')
@@ -281,18 +308,20 @@ def goto_next_charge_transition(
         compensating_gate(V0)
         return
 
-    # V0_charge = charge_transition_parameter()
-    # with MeasurementLoop('goto_charge_transition') as msmt:
-    #     for V in Sweep(charge_transition_parameter, V0_charge, V0_charge + dV_max,  step=V_step):
-    #         msmt.measure(compensation_parameter)
+    V0_charge = charge_transition_parameter()
+    with MeasurementLoop('goto_charge_transition') as msmt:
+        for V in Sweep(charge_transition_parameter, V0_charge, V0_charge + dV_max,  step=V_step):
+            msmt.measure(compensation_parameter)
 
-    # if not silent:
-    #     plot_compensated_charge_transition_measurement(msmt.dataset, print_summary=False)
-    #     plt.show()
+    if not silent:
+        plot_compensated_charge_transition_measurement(msmt.dataset, print_summary=False)
+        plt.show()
     
 
 def plot_compensated_charge_transition_measurement(data, print_summary=True):
     data = convert_to_dataset(data)
+    if len(data.target_voltage) < 2:
+        return
 
     fig, axes = plt.subplots(3, figsize=(6,6), sharex=True)
 
