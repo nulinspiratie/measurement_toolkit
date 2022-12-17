@@ -87,6 +87,8 @@ def initialize_DC_lines(
     station.lines = DC_line_groups['lines']
     station.gates = DC_line_groups['gates']
     station.ohmics = DC_line_groups['ohmics']
+    for name, line in lines.items():
+        setattr(station, name, line)
     
     # Populate namespace
     if populate_namespace:
