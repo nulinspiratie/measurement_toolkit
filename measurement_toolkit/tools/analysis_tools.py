@@ -1,6 +1,7 @@
 import numpy as np
 from matplotlib import pyplot as plt
 from .data_tools import smooth, convert_to_dataset
+import xarray
 
 
 __all__ = ['extract_slope', 'optimize_IQ']
@@ -59,8 +60,8 @@ def optimize_IQ(data_or_arrs, N_phase=180, phase_min=0, silent=False, plot=False
     ])
     signals_I = np.real(signals_rotated)
     signals_Q = np.imag(signals_rotated)
-    std_I = signals_I.std(axis=tuple(range(1, signals_I.ndim)))
-    std_Q = signals_Q.std(axis=tuple(range(1, signals_Q.ndim)))
+    std_I = np.nanstd(signals_I, axis=tuple(range(1, signals_I.ndim)))
+    std_Q = np.nanstd(signals_Q, axis=tuple(range(1, signals_Q.ndim)))
     std_ratios = std_I / std_Q
 
     std_max_idx = np.argmax(std_ratios)
@@ -95,3 +96,22 @@ def optimize_IQ(data_or_arrs, N_phase=180, phase_min=0, silent=False, plot=False
         results['axes'] = axes
 
     return results
+
+
+def extract_tunnel_rates(data_or_arr):
+    # Extract array
+    if isinstance(data_or_arr, (np.ndarray, xarray.DataArray)):
+        arr = data_or_arr
+    else:
+        # Assume we have a dataset, extract array
+        if isinstance(data_or_arr, int):
+            data = convert_to_dataset(data_or_arr)
+
+        if len(data.data_vars) == 1:
+            arr = next(iter(data.data_vars.values()))
+        elif 'RF_inphase' in data.data_vars:
+            arr = data.data_vars['RF_inphase']
+        else:
+            raise RuntimeError('Could not determine array to extract runnel rates')
+    
+    
