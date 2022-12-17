@@ -12,12 +12,12 @@ class CompensatedSweep(PolyParameter):
         target_conductance: float,
         cross_capacitances: dict[DCLine, float],
         conductance_coefficient=0,
-        max_voltage_compensation=10e-3,
+        max_voltage_compensation=5e-3,
         **kwargs
     ):
         measure_parameters = [
-            Parameter('conductance', unit='2e^2/h'),
-            Parameter('conductance_error', unit='2e^2/h'),
+            Parameter('conductance', unit='e^2/h'),
+            Parameter('conductance_error', unit='e^2/h'),
             Parameter('capacitance_compensation', unit='V'),
             Parameter('conductance_error_compensation', unit='V'),
             Parameter('voltage_compensation', unit='V'),
@@ -68,8 +68,7 @@ class CompensatedSweep(PolyParameter):
 
         if execute:
             self.compensating_gate(target_voltage)
-            for gate in self.cross_capacitances:
-                self._latest_voltages[gate] = gate.get_latest()
+            self.zero_offset()
 
         self.results = {
             'conductance': conductance,
@@ -82,6 +81,11 @@ class CompensatedSweep(PolyParameter):
         }
 
         return self.results
+
+    def zero_offset(self):
+        for gate in self.cross_capacitances:
+            self._latest_voltages[gate] = gate.get_latest()
+
 
     def get_raw(self):
         results = self.calculate_compensation(execute=True)
