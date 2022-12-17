@@ -76,6 +76,11 @@ class UHFLI_Interface(InstrumentBase):
         for key in ['output_amplitude', 'frequency', 'time_constant']:
             self.parameters[key] = getattr(self, key)
 
+        # Trace-related attributes
+        self._trace_context = False
+        self._acquisition_signals = []
+        self._timeout = None
+
         self.measurement_params = {}
         self.measurement_params['I'] = Parameter(
             name='RF_inphase',
@@ -197,6 +202,7 @@ class UHFLI_Interface(InstrumentBase):
 
         return demodulator
 
+    # Acquisitions
     def get_signal(self):
         val = self.demodulator.sample()
         signal = (val['x'][0] + 1.j * val['y'][0]) * np.exp(-1.j*self.phase_shift()/360*2*np.pi)
@@ -230,53 +236,132 @@ class UHFLI_Interface(InstrumentBase):
     def measure_I_Q_R_theta(self):
         return self._measure_components(['I', 'Q', 'R', 'theta'])
 
+    # Measurements
     def measure_resonance(self, f_min=None, f_max=None, num=401, df=20e6):
         if f_min is None:
             f_min = self.frequency() - df
             f_max = self.frequency() + df
         self.frequency.sweep(f_min, f_max, num, measure_params=[self.measure_R_theta], revert=True)
 
-    def acquire_trace(self, timeout=None, num=512, time_constant=None, plot=False):
-        if time_constant is None:
-            time_constant = self.time_constant()
+    def measure_frequency_SNR_across_peak(self, voltage_sweep, df=2e6, num=31, disable_lockin_outputs=True):
+        with MeasurementLoop('measure_RF_noise_across_Coulomb_peak') as msmt:
+            self.phase_shift(0)
+            with _disable_lockin_outputs(disable_lockin_outputs):
+                V0 = voltage_sweep.parameter()
+                for V in Sweep(self.frequency, around=df, num=num):
+                    voltage_sweep.parameter(V0)
+                    for V in voltage_sweep:
+                        self.measure_I_Q()
+        plot_data(msmt.dataset)
 
+    # Trace functions
+    @contextmanager
+    def setup_traces(self, num, traces=1, time_constant=None, delay_scale=1, disable_lockin_outputs=True):
+        with _disable_lockin_outputs(activate=disable_lockin_outputs):
+            try:
+                self._trace_context = True
+
+                original_time_constant = self.time_constant()
+
+                if time_constant is None:
+                    time_constant = original_time_constant
+
+                # Subscribe to signals
+                self.daq_raw.unsubscribe('*')
+                self._acquisition_signals = [
+                    f'{self.demodulator.sample.zi_node}.{signal}'.lower() for signal in 'xy'
+                ]
+                for signal in self._acquisition_signals:
+                    self.daq_raw.subscribe(signal)
+
+                self.daq.triggernode(self.demodulator.sample.zi_node + '.TrigIn3')
+                self.daq.type('continuous')
+                self.daq.grid.cols(num)  # Points per trace
+                self.daq.grid.rows(traces)  # Points per trace
+                self.daq.grid.mode('linear')  # Not sure what this does
+                self.time_constant(time_constant)
+                self.daq.duration(time_constant * delay_scale * num)
+                
+                self.daq.endless(0)
+                self.daq.clearhistory(1)
+
+                yield
+            finally:
+                self._trace_context = False
+                self.time_constant(original_time_constant)
+
+    def acquire_trace(self, timeout=None, num=512, traces=1, time_constant=None, delay_scale=1, plot=False, disable_lockin_outputs=True):
+        # Ensure we're set up for trace acquisitions
+        if not self._trace_context:
+            with self.setup_traces(
+                num=num,
+                traces=traces,
+                time_constant=time_constant,
+                delay_scale=delay_scale,
+                disable_lockin_outputs=disable_lockin_outputs
+            ):
+                return self.acquire_trace(plot=plot)
+
+        # Calculate timeout
         if timeout is None:
-            timeout = max(3 * num * time_constant, 3)
+            timeout = max(3, 3 * self.daq.grid.cols.get_latest() * self.time_constant.get_latest())
 
-        self.daq_raw.unsubscribe('*')
-        acquisition_signals = [
-            (self.demodulator.sample.zi_node + f'.{signal}').lower()
-            for signal in 'xy'
-        ]
-        for signal in acquisition_signals:
-            self.daq_raw.subscribe(signal)
-
-        self.daq.triggernode(self.demodulator.sample.zi_node + '.TrigIn3')
-        self.daq.type('continuous')
-
-        self.daq.grid.cols(num)  # Points per trace
-        self.daq.grid.mode('linear')  # Not sure what this does
-        self.demodulator.timeconstant(time_constant)
-        self.daq.duration(time_constant * num)
-        
-        self.daq.endless(0)
-        self.daq.clearhistory(1)
-
+        # Perform acquisition
         self.daq_raw.execute()
         sleep(0.1)
-
         t0 = perf_counter()
         while not self.daq_raw.finished():
             if perf_counter() - t0 > timeout:
-                raise RuntimeError()
+                raise RuntimeError('Could not finish acquisition within timeout')
             sleep(0.1)
+        # Record the 10 last acquisition durations for performance metrics
         self._acquisition_durations = self._acquisition_durations[-9:] + [perf_counter() - t0]
 
         raw_results = self.daq_raw.read(flat=True)
         self.daq_raw.finish()
+
+        results = self.analyse_trace_results(raw_results, plot=plot)
+        return results
+
+    def measure_trace(
+        self, 
+        timeout=None, 
+        num=512, 
+        traces=1,
+        time_constant=None, 
+        delay_scale=1,
+        plot=False, 
+        disable_lockin_outputs=True,  
+        signals=('I', 'Q', 'signal_std', 'signal_mean')
+    ):
+        if time_constant is None:
+            time_constant = self.time_constant()
+
+        sweep = Sweep(np.arange(num) * time_constant * delay_scale, 'time', unit='s')
+        results = self.acquire_trace(
+            timeout=timeout, 
+            num=num, 
+            traces=traces,
+            time_constant=time_constant, 
+            delay_scale=delay_scale,
+            plot=plot,
+            disable_lockin_outputs=disable_lockin_outputs
+        )
+        with MeasurementLoop('RF_trace') as msmt:
+            for signal in signals:
+                msmt.measure(
+                    results[signal], 
+                    name=self.measurement_params[signal].name, 
+                    label=self.measurement_params[signal].label,
+                    unit=self.measurement_params[signal].unit, 
+                    setpoints=sweep
+                )
+        return results
+
+    def analyse_trace_results(self, raw_results, plot=False):
         results = {}
 
-        for key in acquisition_signals:
+        for key in self._acquisition_signals:
             result = raw_results[key][0]['value']
             if len(result) == 1:
                 result = result[0]
@@ -287,74 +372,44 @@ class UHFLI_Interface(InstrumentBase):
             results[key] = result
 
         arr_complex = results['x'] + 1.j*results['y']
-        results = {'I': results['x'], 'Q': results['y'], 'R': np.abs(arr_complex), 'theta': np.angle(arr_complex, deg=True)}
+        arr_complex *= np.exp(-1.j*self.phase_shift() / 360 * 2*np.pi)
+
+        results = {
+            'I': np.real(arr_complex), 
+            'Q': np.imag(arr_complex), 
+            'R': np.abs(arr_complex), 
+            'theta': np.angle(arr_complex, deg=True)
+        }
         results['signal_std'] = np.nanstd(results['I'] + 1.j * results['Q'])
         results['signal_mean'] = np.nanmean(results['I'])
         results['amplitude_mean'] = np.abs(np.nanmean(results['I'] + 1.j * results['Q']))
 
         if plot:
-            fig, axes = plt.subplots(len(results), 1, sharex=True, figsize=(8, 3*len(results)))
+            results_plot = {key: val for key, val in results.items() if np.ndim(val)}
+            fig, axes = plt.subplots(len(results_plot), 1, sharex=True, figsize=(8, 3*len(results_plot)))
             if not isinstance(axes, Iterable):
                 axes = [axes]
-            for k, (key, val) in enumerate(results.items()):
-                print('plotting')
+            for k, (key, val) in enumerate(results_plot.items()):
                 ax = axes[k]
-                for row in val:
-                    ax.plot(row)
+                
+                if np.ndim(val) == 1:
+                    ax.plot(val)
+                else:
+                    ax.pcolormesh(val)
+
                 ax.set_ylabel(key)
             plt.show()
 
-
         return results
 
-    def measure_trace(
-        self, 
-        timeout=None, 
-        num=512, 
-        time_constant=None, 
-        plot=False, 
-        disable_lockin_outputs=True,  
-        signals=('I', 'Q', 'signal_std', 'signal_mean')
-    ):
-        if time_constant is None:
-            time_constant = self.time_constant()
-
-        sweep = Sweep(np.arange(num) * time_constant, 'time', unit='s')
-        with _disable_lockin_outputs(activate=disable_lockin_outputs):
-            results = self.acquire_trace(
-                timeout=timeout, 
-                num=num, 
-                time_constant=time_constant, 
-                plot=plot
-            )
-            with MeasurementLoop('RF_trace') as msmt:
-                for signal in signals:
-                    msmt.measure(
-                        results[signal], 
-                        name=self.measurement_params[signal].name, 
-                        label=self.measurement_params[signal].label,
-                        unit=self.measurement_params[signal].unit, 
-                        setpoints=sweep
-                    )
-        return results
-
-    def measure_SNR_across_peak(self, voltage_sweep, df=2e6, num=31, disable_lockin_outputs=True):
-        with MeasurementLoop('measure_RF_noise_across_Coulomb_peak') as msmt:
-            with _disable_lockin_outputs(disable_lockin_outputs):
-                V0 = voltage_sweep.parameter()
-                for V in Sweep(self.frequency, around=df, num=num):
-                    voltage_sweep.parameter(V0)
-                    for V in voltage_sweep:
-                        self.measure_I_Q()
-        plot_data(msmt.dataset)
-
+    # Analysis
     @staticmethod
     def analyse_SNR_across_peak(data_idx):
-        data = load_data(data_idx)
+        data = load_data(data_idx, print_summary=False)
         frequencies = data.zi_uhfli_dev2235_oscs0_freq.values
         voltages = data.qdac1_V_sensor_plunger
 
-        plot_data(data)
+        plot_data(data, negative_clim=True)
 
         # Analyse results
         shifts = []
@@ -375,12 +430,23 @@ class UHFLI_Interface(InstrumentBase):
             f'SNR = {max_shift*1e3:.2f} mV, '
             f'Phase shift = {phase_shift} degrees'
         )
-        fig, ax = plt.subplots()
-        ax.plot(frequencies, shifts)
 
-        fig, axes = plt.subplots(2, 1, figsize=(12,8))
-        for result in results:
-            ax = axes[0]
-            ax.plot(voltages, result['signal'] * 1e3)
-            ax = axes[1]
-            ax.plot(voltages, result['signal_perpendicular'] * 1e3)
+        signals = np.array([result['signal'] for result in results])
+        signals_perpendicular = np.array([result['signal_perpendicular'] for result in results])
+
+        fig, axes = plt.subplots(1, 2, figsize=(12,4))
+        ax = axes[0]
+        mesh=ax.pcolormesh(voltages, frequencies/1e6, signals * 1e3)
+        ax.set_xlabel(voltages.name)
+        ax.set_ylabel(f'RF frequency (MHz)')
+        plt.colorbar(mesh)
+        ax = axes[1]
+        mesh = ax.pcolormesh(voltages, frequencies/1e6, signals_perpendicular * 1e3)
+        plt.colorbar(mesh)
+        ax.set_xlabel(voltages.name)
+        ax.set_ylabel(f'RF frequency (MHz)')
+
+        fig, ax = plt.subplots(figsize=(4,3))
+        ax.plot(np.array(frequencies)/1e6, np.array(shifts)*1e6)
+        ax.set_xlabel('Frequency (MHz)')
+        ax.set_ylabel('Voltage shift (uV)')
