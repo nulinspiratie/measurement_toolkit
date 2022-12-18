@@ -74,11 +74,10 @@ def load_database_from_config(create_db=False, database_idx=None, silent=False):
         db_file = db_folder / db_location.name.format(incrementer=str(database_idx))
     else:
         max_database_incrementer = 99
-        for k in range(max_database_incrementer, 0, -1):
-            db_file = db_folder / db_location.name.format(incrementer=str(k))
+        for database_idx in range(max_database_incrementer, 0, -1):
+            db_file = db_folder / db_location.name.format(incrementer=str(database_idx))
             if db_file.exists():
                 break
-        
     
     if db_file.exists():
         database = initialise_or_create_database_at(str(db_file))
@@ -88,11 +87,12 @@ def load_database_from_config(create_db=False, database_idx=None, silent=False):
         database = initialise_or_create_database_at(str(db_file))
     else:
         raise FileNotFoundError(f'No database found in {db_folder}. Can be created by passing kwarg "create_db=True"')
-
+        
+    config.core.db_idx = database_idx
     config.core.db_location = str(db_file)
     if not silent:
         print(f'Database: {qc.config.core.db_location}')
-
+    
     return database
 
 
