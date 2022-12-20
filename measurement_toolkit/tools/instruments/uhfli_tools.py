@@ -256,7 +256,7 @@ class UHFLI_Interface(InstrumentBase):
 
     # Trace functions
     @contextmanager
-    def setup_traces(self, num, traces=1, time_constant=None, delay_scale=1, disable_lockin_outputs=True):
+    def setup_traces(self, num, traces=1, time_constant=None, delay_scale=1, disable_lockin_outputs=True, trigger=False):
         with _disable_lockin_outputs(activate=disable_lockin_outputs):
             try:
                 self._trace_context = True
@@ -275,12 +275,16 @@ class UHFLI_Interface(InstrumentBase):
                     self.daq_raw.subscribe(signal)
 
                 self.daq.triggernode(self.demodulator.sample.zi_node + '.TrigIn3')
-                self.daq.type('continuous')
+                if trigger:
+                    self.daq.type(6)
+                else:
+                    self.daq.type('continuous')
                 self.daq.grid.cols(num)  # Points per trace
                 self.daq.grid.rows(traces)  # Points per trace
                 self.daq.grid.mode('linear')  # Not sure what this does
                 self.time_constant(time_constant)
                 self.daq.duration(time_constant * delay_scale * num)
+                self.daq.delay(0)
                 
                 self.daq.endless(0)
                 self.daq.clearhistory(1)
@@ -290,7 +294,7 @@ class UHFLI_Interface(InstrumentBase):
                 self._trace_context = False
                 self.time_constant(original_time_constant)
 
-    def acquire_trace(self, timeout=None, num=512, traces=1, time_constant=None, delay_scale=1, plot=False, disable_lockin_outputs=True):
+    def acquire_trace(self, timeout=None, num=512, traces=1, time_constant=None, delay_scale=1, plot=False, disable_lockin_outputs=True, trigger=False):
         # Ensure we're set up for trace acquisitions
         if not self._trace_context:
             with self.setup_traces(
@@ -298,7 +302,8 @@ class UHFLI_Interface(InstrumentBase):
                 traces=traces,
                 time_constant=time_constant,
                 delay_scale=delay_scale,
-                disable_lockin_outputs=disable_lockin_outputs
+                disable_lockin_outputs=disable_lockin_outputs,
+                trigger=trigger,
             ):
                 return self.acquire_trace(plot=plot)
 
@@ -312,7 +317,10 @@ class UHFLI_Interface(InstrumentBase):
         t0 = perf_counter()
         while not self.daq_raw.finished():
             if perf_counter() - t0 > timeout:
-                raise RuntimeError('Could not finish acquisition within timeout')
+                raise RuntimeError(
+                    'Could not finish acquisition within timeout. '
+                    f'Percentage complete: {self.daq_raw.progress()[0]}'
+                )
             sleep(0.1)
         # Record the 10 last acquisition durations for performance metrics
         self._acquisition_durations = self._acquisition_durations[-9:] + [perf_counter() - t0]
@@ -331,7 +339,8 @@ class UHFLI_Interface(InstrumentBase):
         time_constant=None, 
         delay_scale=1,
         plot=False, 
-        disable_lockin_outputs=True,  
+        disable_lockin_outputs=True, 
+        trigger=False,
         signals=('I', 'Q', 'signal_std', 'signal_mean')
     ):
         if time_constant is None:
@@ -345,7 +354,8 @@ class UHFLI_Interface(InstrumentBase):
             time_constant=time_constant, 
             delay_scale=delay_scale,
             plot=plot,
-            disable_lockin_outputs=disable_lockin_outputs
+            disable_lockin_outputs=disable_lockin_outputs,
+            trigger=trigger,
         )
         with MeasurementLoop('RF_trace') as msmt:
             for signal in signals:

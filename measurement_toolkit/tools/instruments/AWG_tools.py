@@ -169,7 +169,7 @@ def create_sequence(
         assert AWG is not None
         AWG.stop()
         AWG.all_channels_off()
-        AWG.make_send_and_load_awg_file(*package[:])
+        AWG.make_send_and_load_awg_file(*package[:], channels=package.channels)
 
     if start:
         assert upload
