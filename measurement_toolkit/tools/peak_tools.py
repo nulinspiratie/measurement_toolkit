@@ -18,6 +18,7 @@ from qcodes.dataset import (
 )
 from measurement_toolkit.tools.data_tools import smooth, convert_to_dataset
 from measurement_toolkit.tools.plot_tools import plot_data
+from measurement_toolkit.tools.general_tools import args_from_config
 
 
 __all__ = ['extract_dataset_peaks', 'goto_next_peak', 'goto_nearest_peak']
@@ -244,7 +245,12 @@ def goto_peak(gate, method='next', around=10e-3, num=101, measure_param=None, si
         'peak_yvals': peak_yvals,
     }
 
-def goto_next_peak(gate, around=10e-3, num=101, measure_param=None, silent=False, prominence=0.05, peak_shift=None, **kwargs):
+@args_from_config(
+    'goto_nearest_peak', 
+    kwargs={'around': 10e-3, 'num': 151, 'prominence': 0.05, 'peak_shift': None}, 
+    station_args=['gate']
+)
+def goto_next_peak(gate, around=None, num=None, measure_param=None, silent=False, prominence=None, peak_shift=None, **kwargs):
     return goto_peak(
         gate=gate, 
         method='next', 
@@ -257,18 +263,24 @@ def goto_next_peak(gate, around=10e-3, num=101, measure_param=None, silent=False
         **kwargs
     )
 
-def goto_nearest_peak(gate, around=10e-3, num=151, measure_param=None, silent=False, prominence=0.05, peak_shift=None, **kwargs):
+@args_from_config(
+    'goto_nearest_peak', 
+    kwargs={'around': 10e-3, 'num': 151, 'prominence': 0.05, 'peak_shift': None}, 
+    station_args=['gate']
+)
+def goto_nearest_peak(gate, around=None, num=None, measure_param=None, silent=False, prominence=None, peak_shift=None, **kwargs):
     return goto_peak(
         gate=gate, 
         method='nearest', 
         around=around, 
         num=num, 
         measure_param=measure_param,
-        silent=False,
+        silent=silent,
         prominence=prominence,
         peak_shift=peak_shift,
         **kwargs
     )
+
 
 def goto_next_charge_transition(
     charge_transition_parameter,

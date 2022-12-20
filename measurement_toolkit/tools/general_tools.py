@@ -17,7 +17,7 @@ __all__ = ['execfile', 'is_between', 'get_truth', 'get_memory_usage',
            'attribute_from_config', 'clear_single_settings', 'JSONEncoder',
            'JSONListEncoder', 'run_code', 'get_exponent', 'get_first_digit',
            'ParallelTimedRotatingFileHandler', 'convert_setpoints',
-           'Singleton', 'property_ignore_setter', 'freq_to_str']
+           'Singleton', 'property_ignore_setter', 'freq_to_str', 'args_from_config']
 
 code_labels = {}
 properties_config = config['user'].get('properties', {})
@@ -662,3 +662,69 @@ def ping(host):
     command = ['ping', param, '1', '-w', '200', host]
 
     return subprocess.call(command) == 0
+
+
+def _extract_arg_from_config(config_path, arg, is_station_arg=False):
+    # Get arg from config
+    config_elem = config.user.get('functions', {})
+    for path_elem in config_path.split('.'):
+        config_elem = config_elem.get(path_elem, {})
+
+    if arg not in config_elem:
+        raise KeyError(
+            f'Key qc.config.user.{config_path}.{arg} must be set '
+            f'or explicit kwarg {arg} must be passed'
+        )
+    elem = config_elem[arg]
+    
+    if is_station_arg:
+        if not hasattr(qc.Station.default, elem):
+            raise AttributeError(f'Station must have attribute {elem}')
+
+        elem = getattr(qc.Station.default, elem)
+
+    return elem
+
+
+def _transform_args_to_kwargs(func, args, kwargs):
+    new_kwargs = dict(**kwargs)
+    varnames = func.__code__.co_varnames
+    assert len(args) <= len(varnames)
+
+    for arg, varname in zip(args, varnames):
+        assert varname not in kwargs
+        new_kwargs[varname] = arg
+
+    return new_kwargs
+
+
+def args_from_config(config_path, args=(), kwargs=(), station_args=()):
+    def decorator(func):
+        @wraps(func)
+        def wrapped_function(*func_args, **func_kwargs):
+            # Transform args to kwargs
+            merged_kwargs = _transform_args_to_kwargs(func, func_args, func_kwargs)
+
+            for arg in args:
+                if arg in merged_kwargs:
+                    continue
+                merged_kwargs[arg] = _extract_arg_from_config(config_path, arg=arg, is_station_arg=False)
+                
+            for arg, val in kwargs.items():
+                if arg in merged_kwargs:
+                    continue
+                try:
+                    merged_kwargs[arg] = _extract_arg_from_config(config_path, arg=arg, is_station_arg=False)
+                except KeyError:
+                    print('keyerro')
+                    merged_kwargs[arg] = val
+
+            for arg in station_args:
+                if arg in merged_kwargs:
+                    continue
+                merged_kwargs[arg] = _extract_arg_from_config(config_path, arg=arg, is_station_arg=True)
+
+            return func(**merged_kwargs)
+
+        return wrapped_function
+    return decorator
