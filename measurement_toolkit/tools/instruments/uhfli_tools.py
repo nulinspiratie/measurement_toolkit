@@ -432,6 +432,16 @@ class UHFLI_Interface(InstrumentBase):
 
         return results
 
+    def _wait_until_trace_acquired(self, initial_percentage_complete, max_attempts=80):
+        for _ in range(max_attempts):
+            new_percentage_complete = self.daq_raw.progress()[0]*100
+            if new_percentage_complete > initial_percentage_complete:
+                return True, new_percentage_complete
+            sleep(0.01)
+        else:
+            print(f'RF readout percentage remained at {initial_percentage_complete:.1f}%')
+            return False, new_percentage_complete
+
     def gate_scan(
         self, 
         fast_sweep, 
@@ -487,6 +497,8 @@ class UHFLI_Interface(InstrumentBase):
 
         if timeout is None:
             timeout = duration * len(slow_sweep) * 3
+
+        print(num, len(slow_sweep), time_constant, duration)
             
         with self.setup_traces(
             num=num,
@@ -503,21 +515,22 @@ class UHFLI_Interface(InstrumentBase):
             percentage_complete = 0
             for val in slow_sweep:
                 t0 = perf_counter()
-                fast_sweep.sweep(block=True)
-                for k in range(max_attempts):
-                    new_percentage_complete = self.daq_raw.progress()[0]*100
-                    if new_percentage_complete > percentage_complete:
-                        percentage_complete = new_percentage_complete
+                for sweep_attempts in range(3):
+                    fast_sweep.sweep(block=True)
+                    trace_acquired, percentage_complete = self._wait_until_trace_acquired(
+                        initial_percentage_complete=percentage_complete
+                    )
+                    print(f'{self.daq_raw.progress()[0]*100}')
+                    if trace_acquired:
                         break
-                    sleep(0.01)
-                else:
-                    print(f'RF readout percentage remained at {percentage_complete:.1f}%')
-                if not silent:
-                    print(f'Finished trace: {self.daq_raw.finished()} ({percentage_complete:.1f}%)')
-                
-                self._acquisition_durations.append((perf_counter() - t0, k))
 
-            raw_results = self.retrieve_acquisition(timeout=timeout)
+                if not silent:
+                    print(f'Finished trace: {self.daq_raw.finished()} ({percentage_complete:.1f}% complete)')
+                
+                self._acquisition_durations.append(perf_counter() - t0)
+
+            raw_results = self.daq_raw.read(flat=True)
+            self.daq_raw.finish()
 
             results = self.analyse_trace_results(raw_results)
 
