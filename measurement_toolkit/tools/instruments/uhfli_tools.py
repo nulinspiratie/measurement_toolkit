@@ -256,7 +256,7 @@ class UHFLI_Interface(InstrumentBase):
 
     # Trace functions
     @contextmanager
-    def setup_traces(self, num, traces=1, time_constant=None, delay_scale=1, disable_lockin_outputs=True, trigger=False):
+    def setup_traces(self, num, traces=1, time_constant=None, delay_scale=1, disable_lockin_outputs=True, trigger_channel=None):
         with _disable_lockin_outputs(activate=disable_lockin_outputs):
             try:
                 self._trace_context = True
@@ -274,8 +274,8 @@ class UHFLI_Interface(InstrumentBase):
                 for signal in self._acquisition_signals:
                     self.daq_raw.subscribe(signal)
 
-                self.daq.triggernode(self.demodulator.sample.zi_node + '.TrigIn3')
-                if trigger:
+                if trigger_channel is not None:
+                    self.daq.triggernode(self.demodulator.sample.zi_node + f'.TrigIn{trigger_channel}')
                     self.daq.type(6)
                 else:
                     self.daq.type('continuous')
@@ -294,7 +294,42 @@ class UHFLI_Interface(InstrumentBase):
                 self._trace_context = False
                 self.time_constant(original_time_constant)
 
-    def acquire_trace(self, timeout=None, num=512, traces=1, time_constant=None, delay_scale=1, plot=False, disable_lockin_outputs=True, trigger=False):
+    def start_acquisition(self):
+        self.daq_raw.execute()
+        sleep(0.03)
+
+    def retrieve_acquisition(self, timeout=None):
+        # Calculate timeout
+        if timeout is None:
+            timeout = max(3, 3 * self.daq.grid.cols.get_latest() * self.time_constant.get_latest())
+
+        t0 = perf_counter()
+        while not self.daq_raw.finished():
+            if perf_counter() - t0 > timeout:
+                raise RuntimeError(
+                    'Could not finish acquisition within timeout. '
+                    f'Percentage complete: {self.daq_raw.progress()[0]*100:.1f}%'
+                )
+            sleep(0.03)
+        # Record the 10 last acquisition durations for performance metrics
+        self._acquisition_durations = self._acquisition_durations[-9:] + [perf_counter() - t0]
+
+        raw_results = self.daq_raw.read(flat=True)
+        self.daq_raw.finish()
+        return raw_results
+
+
+    def acquire_trace(
+        self, 
+        timeout=None, 
+        num=512, 
+        traces=1, 
+        time_constant=None, 
+        delay_scale=1, 
+        plot=False, 
+        disable_lockin_outputs=True, 
+        trigger_channel=None
+    ):
         # Ensure we're set up for trace acquisitions
         if not self._trace_context:
             with self.setup_traces(
@@ -303,30 +338,14 @@ class UHFLI_Interface(InstrumentBase):
                 time_constant=time_constant,
                 delay_scale=delay_scale,
                 disable_lockin_outputs=disable_lockin_outputs,
-                trigger=trigger,
+                trigger_channel=trigger_channel,
             ):
                 return self.acquire_trace(plot=plot)
 
-        # Calculate timeout
-        if timeout is None:
-            timeout = max(3, 3 * self.daq.grid.cols.get_latest() * self.time_constant.get_latest())
-
         # Perform acquisition
-        self.daq_raw.execute()
-        sleep(0.1)
-        t0 = perf_counter()
-        while not self.daq_raw.finished():
-            if perf_counter() - t0 > timeout:
-                raise RuntimeError(
-                    'Could not finish acquisition within timeout. '
-                    f'Percentage complete: {self.daq_raw.progress()[0]}'
-                )
-            sleep(0.1)
-        # Record the 10 last acquisition durations for performance metrics
-        self._acquisition_durations = self._acquisition_durations[-9:] + [perf_counter() - t0]
+        self.start_acquisition()
 
-        raw_results = self.daq_raw.read(flat=True)
-        self.daq_raw.finish()
+        raw_results = self.retrieve_acquisition(timeout=timeout)
 
         results = self.analyse_trace_results(raw_results, plot=plot)
         return results
@@ -405,20 +424,180 @@ class UHFLI_Interface(InstrumentBase):
                 if np.ndim(val) == 1:
                     ax.plot(val)
                 else:
-                    ax.pcolormesh(val)
+                    mesh = ax.pcolormesh(val)
+                    plt.colorbar(mesh)
 
                 ax.set_ylabel(key)
             plt.show()
 
         return results
 
+    def gate_scan(
+        self, 
+        fast_sweep, 
+        num=301,
+        delay_scale=1,
+        trigger_channel=4,
+        timeout=None,
+        plot=True,
+    ):
+        assert not self._trace_context
+
+        duration = fast_sweep.sweep_settings['duration']
+        time_constant = duration / num
+
+        if timeout is None:
+            timeout = max(duration * 3, 5)
+            
+        with self.setup_traces(
+            num=num,
+            traces=1,
+            time_constant=time_constant,
+            delay_scale=delay_scale,
+            disable_lockin_outputs=disable_lockin_outputs,
+            trigger_channel=trigger_channel,
+        ):
+            # Perform acquisition
+            self.start_acquisition()
+
+            fast_sweep.sweep(block=True)
+
+            raw_results = self.retrieve_acquisition(timeout=timeout)
+
+            results = self.analyse_trace_results(raw_results, plot=plot)
+            return results
+
+    def gate_scan_2D(
+        self, 
+        slow_sweep, 
+        fast_sweep, 
+        num=301,
+        delay_scale=1,
+        trigger_channel=4,
+        timeout=None,
+        plot=True,
+        silent=True,
+        signals=['I', 'Q']
+    ):
+        assert not self._trace_context
+        max_attempts = 80
+
+        duration = fast_sweep.sweep_settings['duration']
+        time_constant = duration / num
+
+        if timeout is None:
+            timeout = duration * len(slow_sweep) * 3
+            
+        with self.setup_traces(
+            num=num,
+            traces=len(slow_sweep),
+            time_constant=time_constant,
+            delay_scale=delay_scale,
+            disable_lockin_outputs=disable_lockin_outputs,
+            trigger_channel=trigger_channel,
+        ):
+            # Perform acquisition
+            self._acquisition_durations = []
+            self.start_acquisition()
+
+            percentage_complete = 0
+            for val in slow_sweep:
+                t0 = perf_counter()
+                fast_sweep.sweep(block=True)
+                for k in range(max_attempts):
+                    new_percentage_complete = self.daq_raw.progress()[0]*100
+                    if new_percentage_complete > percentage_complete:
+                        percentage_complete = new_percentage_complete
+                        break
+                    sleep(0.01)
+                else:
+                    print(f'RF readout percentage remained at {percentage_complete:.1f}%')
+                if not silent:
+                    print(f'Finished trace: {self.daq_raw.finished()} ({percentage_complete:.1f}%)')
+                
+                self._acquisition_durations.append((perf_counter() - t0, k))
+
+            raw_results = self.retrieve_acquisition(timeout=timeout)
+
+            results = self.analyse_trace_results(raw_results)
+
+            # Record results
+            fast_voltages = np.linspace(fast_sweep.sweep_settings['V_start'], fast_sweep.sweep_settings['V_stop'], num)
+            fast_sweep_array = Sweep(fast_voltages, fast_sweep.name)
+            with MeasurementLoop(f'RF_2D_{slow_sweep.parameter.name}_{fast_sweep.name}') as msmt:
+                for signal in signals:
+                    msmt.measure(
+                        results[signal], name=signal, setpoints=[slow_sweep, fast_sweep_array]
+                    )
+
+            if plot and running_measurement() is None:
+                plot_data(msmt.dataset, diverging_cmap=False)
+
+            return results
+
+    def bias_scan(
+        self, 
+        ohmic, 
+        V_bias, 
+        num=251, 
+        time_constant=1e-3,
+        delay_scale=1,
+        trigger_channel=4,
+        timeout=None,
+        plot=True,
+    ):
+        assert not self._trace_context
+
+        duration = num * time_constant
+        ohmic.sweeper.setup_ramp(-V_bias, V_bias, duration, plot=False, silent=True)
+
+        return self.gate_scan(
+            fast_sweep=ohmic.sweeper,
+            num=num,
+            delay_scale=delay_scale,
+            trigger_channel=trigger_channel,
+            timeout=timeout,
+            plot=plot,
+        )
+
+    def bias_scan_2D(
+        self, 
+        slow_sweep, 
+        ohmic, 
+        V_bias, 
+        num=251, 
+        time_constant=1e-3,
+        delay_scale=1,
+        trigger_channel=4,
+        timeout=None,
+        plot=True,
+        silent=True,
+        signals=['R', 'theta']
+    ):
+        assert not self._trace_context
+
+        duration = num * time_constant
+        ohmic.sweeper.setup_ramp(-V_bias, V_bias, duration, plot=False, silent=True)
+
+        return self.gate_scan_2D(
+            slow_sweep=slow_sweep, 
+            fast_sweep=ohmic.sweeper, 
+            num=num,
+            delay_scale=delay_scale,
+            trigger_channel=trigger_channel,
+            timeout=timeout,
+            plot=plot,
+            silent=silent,
+            signals=signals
+        )
+
     # Analysis
     @staticmethod
-    def analyse_SNR_across_peak(data_idx):
+    def analyse_SNR_across_peak(data_idx, ):
         data = load_data(data_idx, print_summary=False)
         frequencies = data.zi_uhfli_dev2235_oscs0_freq.values
-        voltages = data.qdac1_V_sensor_plunger
-
+        voltages = list(data.coords.values())[-1]
+        
         plot_data(data, negative_clim=True)
 
         # Analyse results
@@ -436,9 +615,10 @@ class UHFLI_Interface(InstrumentBase):
         max_shift = shifts[max_idx]
         phase_shift = results[max_idx]['phase_shift']
         print(
-            f'Optimal frequency: {max_frequency/1e6:.2f} MHz, '
-            f'SNR = {max_shift*1e3:.2f} mV, '
-            f'Phase shift = {phase_shift} degrees'
+            'Optimal settings:'
+            f'SNR = {max_shift*1e3:.2f} mV, \n'
+            f'RF_lockin.frequency({max_frequency/1e6:.2f}e6)  # MHz\n'
+            f'RF_lockin.phase_shift({phase_shift})  # degrees\n'
         )
 
         signals = np.array([result['signal'] for result in results])
