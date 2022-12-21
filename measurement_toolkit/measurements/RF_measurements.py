@@ -138,7 +138,7 @@ class QDac2Sweeper():
             # Return to initial voltage
             voltages += [V0]
         
-        voltages = np.array(voltages)
+        self.voltages = voltages = np.array(voltages)
 
         # Ensure number of points does not exceed limit
         assert len(voltages) < 1e5, f"Number of points {len(voltages)} exceeds limit 100000"
