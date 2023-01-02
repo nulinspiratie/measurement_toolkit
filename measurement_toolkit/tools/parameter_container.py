@@ -7,7 +7,7 @@ __all__ = [
     'ParameterContainer'
 ]
 
-def print_parameters_from_container(parameters, evaluatable=True, comment=True, newline=True):
+def print_parameters_from_container(parameters, evaluatable=True, comment=True, newline=True, indent_level=0):
     parameter_strings = []
 
     for name, parameter_info in parameters.items():
@@ -26,12 +26,13 @@ def print_parameters_from_container(parameters, evaluatable=True, comment=True, 
         # Must be a better way to do this
         value_str = ('{:'+formatter+'}').format(parameter_info['value'])
 
+        indent = ' ' * (4 * indent_level)
         if evaluatable:
-            parameter_string = f'{name}({value_str})'
+            parameter_string = f'{indent}{name}({value_str})'
             if comment and newline and parameter_info.get('comment'):
                 parameter_string += f'  # {parameter_info["comment"]}'
         else:
-            parameter_string = f'{name} = {value_str}'
+            parameter_string = f'{indent}{name} = {value_str}'
             if unit:
                 parameter_string += f' {parameter_info["unit"]}'
         parameter_strings.append(parameter_string)
@@ -106,7 +107,11 @@ class ParameterContainer(Metadatable):
         self.update()
 
         if kwargs.get('return_dict', True):
-            self.print(evaluatable=kwargs.get('evaluatable', True), comment=kwargs.get('comment', True))
+            self.print(
+                evaluatable=kwargs.get('evaluatable', True), 
+                comment=kwargs.get('comment', True),
+                indent_level=kwargs.get('indent_level', 0)
+            )
         else:
             self.update()
             return self.get_parameter_values()
@@ -126,12 +131,16 @@ class ParameterContainer(Metadatable):
 
         return parameter_values
 
-    def print(self, evaluatable=False, comment=True):
+    def print(self, evaluatable=False, comment=True, indent_level=0):
         # Print nested parameter snapshots
         for parameter_snapshot in self.nested_containers.values():
-            parameter_snapshot.print(evaluatable=evaluatable, comment=comment)
+            parameter_snapshot.print(
+                evaluatable=evaluatable, 
+                comment=comment,
+                indent_level=indent_level
+            )
 
-        print_parameters_from_container(self.parameters, evaluatable=evaluatable, comment=comment)
+        print_parameters_from_container(self.parameters, evaluatable=evaluatable, comment=comment, indent_level=indent_level)
         
 
     def add_parameter(self, parameter, name=None, comment='', overwrite=True, value_lower_bound=None, **kwargs):
