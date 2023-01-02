@@ -19,6 +19,7 @@ from qcodes.dataset import (
 __all__ = [
     'update_plottr_database',
     'initialize_config',
+    'full_system_summary',
 ]
 
 
@@ -52,6 +53,22 @@ def update_plottr_database(database_path):
     settings_file.write_text(json.dumps(settings, indent=4))
 
     return settings
+
+
+def full_system_summary():
+    from measurement_toolkit.tools.gate_tools import print_gate_leakages
+    print(f'Gate leakage currents')
+    print_gate_leakages(indent_level=1)
+    
+    print(f'\nConductances')
+    from measurement_toolkit.parameters.conductance_parameter import print_conductances
+    print_conductances(indent_level=1)
+    
+    print(f'\nSytem summary')
+    station = qc.Station.default
+    if hasattr(station, 'system_summary'):
+        station.system_summary(indent_level=1)
+
 
 
 def load_database_from_config(create_db=False, database_idx=None, silent=False):

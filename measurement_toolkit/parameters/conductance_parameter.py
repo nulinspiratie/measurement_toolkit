@@ -128,3 +128,10 @@ def create_conductance_parameters(ohmics):
             )
             conductance_parameters.append(G)
     return conductance_parameters
+
+
+def print_conductances(indent_level=0):
+    station = qc.Station.default
+    indent = ' ' * (4 *indent_level)
+    for G in station.conductance_parameters:
+        print(f'{indent}{G.short_name:30} = {G():6.3f} e^2/h')
