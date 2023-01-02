@@ -1,3 +1,4 @@
+from warnings import warn
 from matplotlib import pyplot as plt
 import numpy as np
 from functools import partial
@@ -140,20 +141,20 @@ class UHFLI_Interface(InstrumentBase):
 
     def disable_channels(self):
         # Disable all input channels
-        for input_channel in self.sigins:
+        for input_channel in self.uhfli.sigins:
             input_channel.on(False)
-            for demodulator in self.demods:
+            for demodulator in self.uhfli.demods:
                 demodulator.enable(False)
 
         # Disable all output channels
-        for output_channel in self.sigouts:
+        for output_channel in self.uhfli.sigouts:
             # Turn channel output off
             output_channel.on(False)
 
             for oscillator_idx in range(8):
                 # Turn off all oscillators
-                oscillator_enable_parameter = output_channel.parameters[f'enables{oscillator_idx}']
-                oscillator_enable_parameter(False)
+                oscillator_enable_parameter = output_channel.enables[oscillator_idx]
+                oscillator_enable_parameter.value(False)
 
     def configure_output(self, output_amplitude=10e-3, output_idx=None, oscillator_idx=None):
         if output_idx is None:
@@ -169,12 +170,12 @@ class UHFLI_Interface(InstrumentBase):
         output_channel.imp50(False)  # DUT is not 50-ohm matched. Doubles amplitude if set to True
 
         # Set oscillator amplitude
-        oscillator_amplitude = output_channel.parameters[f'amplitudes{oscillator_idx}']
-        oscillator_amplitude(output_amplitude)  # Vpk, max set by channel range
+        oscillator_amplitude = output_channel.amplitudes[oscillator_idx]
+        oscillator_amplitude.value(output_amplitude)  # Vpk, max set by channel range
 
         # Enable oscillator
-        oscillator_enable = output_channel.parameters[f'enables{oscillator_idx}']
-        oscillator_enable(True)
+        oscillator_enable = output_channel.enables[oscillator_idx]
+        oscillator_enable.value(True)
 
     def configure_demodulator(self, demodulator_idx=None, input_idx=None, oscillator_idx=None):
         if input_idx is None:
@@ -237,13 +238,22 @@ class UHFLI_Interface(InstrumentBase):
         return self._measure_components(['I', 'Q', 'R', 'theta'])
 
     # Measurements
-    def measure_resonance(self, f_min=None, f_max=None, num=401, df=20e6):
+    def measure_resonance(
+        self, f_min=None, f_max=None, num=401, df=20e6, sweep=None, disable_lockin_outputs=True
+    ):
+        if not any(sigout.on() for sigout in self.uhfli.sigouts):
+            warn('All output channels are off')
+
         if f_min is None:
             f_min = self.frequency() - df
             f_max = self.frequency() + df
-        self.frequency.sweep(f_min, f_max, num, measure_params=[self.measure_R_theta], revert=True)
+        with _disable_lockin_outputs(activate=disable_lockin_outputs):
+            self.frequency.sweep(f_min, f_max, num, measure_params=[self.measure_R_theta], revert=True, sweep=sweep)
 
     def measure_frequency_SNR_across_peak(self, voltage_sweep, df=2e6, num=31, disable_lockin_outputs=True):
+        if not any(sigout.on() for sigout in self.uhfli.sigouts):
+            warn('All output channels are off')
+
         with MeasurementLoop('measure_RF_noise_across_Coulomb_peak') as msmt:
             self.phase_shift(0)
             with _disable_lockin_outputs(disable_lockin_outputs):
@@ -257,6 +267,9 @@ class UHFLI_Interface(InstrumentBase):
     # Trace functions
     @contextmanager
     def setup_traces(self, num, traces=1, time_constant=None, delay_scale=1, disable_lockin_outputs=True, trigger_channel=None):
+        if not any(sigout.on() for sigout in self.uhfli.sigouts):
+            warn('All output channels are off')
+            
         with _disable_lockin_outputs(activate=disable_lockin_outputs):
             try:
                 self._trace_context = True
@@ -403,7 +416,7 @@ class UHFLI_Interface(InstrumentBase):
         arr_complex = results['x'] + 1.j*results['y']
         arr_complex *= np.exp(-1.j*self.phase_shift() / 360 * 2*np.pi)
 
-        results = {
+        self._signal = results = {
             'I': np.real(arr_complex), 
             'Q': np.imag(arr_complex), 
             'R': np.abs(arr_complex), 
@@ -447,11 +460,14 @@ class UHFLI_Interface(InstrumentBase):
         fast_sweep, 
         num=301,
         delay_scale=1,
-        trigger_channel=4,
+        trigger_channel=None,
         timeout=None,
         plot=True,
     ):
         assert not self._trace_context
+        
+        if trigger_channel is None:
+            trigger_channel = fast_sweep.RF_trigger_channel
 
         duration = fast_sweep.sweep_settings['duration']
         time_constant = duration / num
@@ -467,6 +483,7 @@ class UHFLI_Interface(InstrumentBase):
             disable_lockin_outputs=disable_lockin_outputs,
             trigger_channel=trigger_channel,
         ):
+
             # Perform acquisition
             self.start_acquisition()
 
@@ -483,14 +500,16 @@ class UHFLI_Interface(InstrumentBase):
         fast_sweep, 
         num=301,
         delay_scale=1,
-        trigger_channel=4,
+        trigger_channel=None,
         timeout=None,
         plot=True,
         silent=True,
         signals=['I', 'Q']
     ):
         assert not self._trace_context
-        max_attempts = 80
+        
+        if trigger_channel is None:
+            trigger_channel = fast_sweep.RF_trigger_channel
 
         duration = fast_sweep.sweep_settings['duration']
         time_constant = duration / num
@@ -498,7 +517,6 @@ class UHFLI_Interface(InstrumentBase):
         if timeout is None:
             timeout = duration * len(slow_sweep) * 3
 
-        print(num, len(slow_sweep), time_constant, duration)
             
         with self.setup_traces(
             num=num,
@@ -520,7 +538,6 @@ class UHFLI_Interface(InstrumentBase):
                     trace_acquired, percentage_complete = self._wait_until_trace_acquired(
                         initial_percentage_complete=percentage_complete
                     )
-                    print(f'{self.daq_raw.progress()[0]*100}')
                     if trace_acquired:
                         break
 
@@ -539,8 +556,9 @@ class UHFLI_Interface(InstrumentBase):
             fast_sweep_array = Sweep(fast_voltages, fast_sweep.name)
             with MeasurementLoop(f'RF_2D_{slow_sweep.parameter.name}_{fast_sweep.name}') as msmt:
                 for signal in signals:
+                    param = self.measurement_params[signal]
                     msmt.measure(
-                        results[signal], name=signal, setpoints=[slow_sweep, fast_sweep_array]
+                        results[signal], name=param.name, label=param.label, unit=param.unit, setpoints=[slow_sweep, fast_sweep_array]
                     )
 
             if plot and running_measurement() is None:
@@ -555,7 +573,7 @@ class UHFLI_Interface(InstrumentBase):
         num=251, 
         time_constant=1e-3,
         delay_scale=1,
-        trigger_channel=4,
+        trigger_channel=None,
         timeout=None,
         plot=True,
     ):
