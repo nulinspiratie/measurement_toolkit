@@ -198,3 +198,22 @@ def check_gate_leakages(current_threshold=3e-9):
             print(f'{current * 1e9:.0f} nA leakage from gate {gate}')
     else:
         print('No gate leakage')
+
+
+def print_gate_leakages(indent_level=0, current_limit=5e-9):
+    station = qc.Station.default
+    indent = ' ' * (4 *indent_level)
+    is_leaking = False
+    for gate in station.gates:
+        current = gate.i()
+        print(f'{indent}{gate.short_name:30} = {current*1e9:4.1f} nA', end='')
+        if abs(current) > current_limit:
+            print(' LEAKING!')
+            is_leaking = True
+        else:
+            print()
+
+    text = 'GATES ARE LEAKING!!!' if is_leaking else 'NO GATE LEAKAGE'
+    print(indent + '*' * (len(text)+8))
+    print(indent + '*** ' + text + ' ***')
+    print(indent + '*' * (len(text)+8))
