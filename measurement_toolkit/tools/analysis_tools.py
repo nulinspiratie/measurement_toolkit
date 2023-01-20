@@ -45,7 +45,7 @@ def optimize_IQ(data_or_arrs, N_phase=180, phase_min=0, silent=False, plot=False
     else: 
         data = convert_to_dataset(data_or_arrs, 'xarray')
         if hasattr(data, 'RF_inphase') and hasattr(data, 'RF_quadrature'):
-            signal_complex = data.RF_inphase + 1.j * data.RF_quadrature
+            signal_complex = data.RF_inphase + 1.j * data.RF_quadrature.values
         elif hasattr(data, 'R') and hasattr(data, 'theta'):
             arr_R = data.R
             arr_theta = data.theta
@@ -96,22 +96,3 @@ def optimize_IQ(data_or_arrs, N_phase=180, phase_min=0, silent=False, plot=False
         results['axes'] = axes
 
     return results
-
-
-def extract_tunnel_rates(data_or_arr):
-    # Extract array
-    if isinstance(data_or_arr, (np.ndarray, xarray.DataArray)):
-        arr = data_or_arr
-    else:
-        # Assume we have a dataset, extract array
-        if isinstance(data_or_arr, int):
-            data = convert_to_dataset(data_or_arr)
-
-        if len(data.data_vars) == 1:
-            arr = next(iter(data.data_vars.values()))
-        elif 'RF_inphase' in data.data_vars:
-            arr = data.data_vars['RF_inphase']
-        else:
-            raise RuntimeError('Could not determine array to extract runnel rates')
-    
-    

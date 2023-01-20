@@ -14,9 +14,11 @@ ramp = bb.PulseAtoms.ramp  # args: start, stop
 sine = bb.PulseAtoms.sine  # args: freq, ampl, off, phase
 
 
+__all__ = ['Pulse', 'DCPulse', 'SinePulse', 'create_sequence']
+
 class Pulse:
-    sampling_rate: ClassVar[float] = 1e9
-    default_marker = [(0, 0.1e-6)]  # (t_start, duration)
+    # sampling_rate: ClassVar[float] = 1e9
+    default_marker = [(0, 2e-6)]  # (t_start, duration)
 
     def create_blueprint(self, amplitude_scale):
         raise NotImplementedError
@@ -39,7 +41,7 @@ class DCPulse(Pulse):
         assert amplitude_scale < 1
 
         blueprint = bb.BluePrint()
-        blueprint.setSR(Pulse.sampling_rate)
+        # blueprint.setSR(Pulse.sampling_rate)
         amplitude = self.amplitude / amplitude_scale
         blueprint.insertSegment(0, ramp, (amplitude, amplitude), dur=self.duration, name=self.name)
 
@@ -62,7 +64,7 @@ class SinePulse(Pulse):
         assert amplitude_scale < 1
 
         blueprint = bb.BluePrint()
-        blueprint.setSR(Pulse.sampling_rate)
+        # blueprint.setSR(Pulse.sampling_rate)
         amplitude = self.amplitude / amplitude_scale
         
         blueprint.insertSegment(0, sine, (self.frequency, amplitude, self.offset, self.phase), dur=self.duration, name=self.name)
@@ -110,8 +112,15 @@ def create_sequence(
     plot=True, 
     sweeps=None,
     frequency_cutoff=None,
+    silent=False
 ):
     AWG = getattr(qc.Station.default, 'AWG', None)
+    if AWG is None:
+        sampling_rate = 1e7
+        if not silent:
+            warn('AWG not found in station')
+    else:
+        sampling_rate = AWG.clock_freq()
 
     # Create element (we only need one for our purposes)
     element = bb.Element()
@@ -122,6 +131,8 @@ def create_sequence(
         channel_blueprints = [pulse.create_blueprint(amplitude_scale=amplitude_scale) for pulse in pulses]
         blueprint = reduce(bb.BluePrint.__add__, channel_blueprints)
         blueprints.append(blueprint)
+        for blueprint in blueprints:
+            blueprint.setSR(sampling_rate)
         element.addBluePrint(channel, blueprint)
 
     elements = [element]
@@ -137,15 +148,17 @@ def create_sequence(
         elements = list(sequence._data.values())
     
     # Set sequence sample rate
-    sequence.setSR(Pulse.sampling_rate)
+    sequence.setSR(sampling_rate)
 
     # Configure amplitudes and offsets
     for channel in amplitude_scales:
         if AWG is not None:
             amplitude = getattr(AWG, f'ch{channel}_amp')()
-            sequence.setChannelAmplitude(channel, amplitude)  # Call signature: channel, amplitude (peak-to-peak)
         else:
-            warn('Could not get channel amplitudes from AWG, please set station.AWG')
+            amplitude = 4 
+            if not silent:
+                warn('Could not get channel amplitudes from AWG, please set station.AWG')
+        sequence.setChannelAmplitude(channel, amplitude)  # Call signature: channel, amplitude (peak-to-peak)
         sequence.setChannelOffset(channel, 0)
 
         if frequency_cutoff is not None:

@@ -9,6 +9,7 @@ import logging.handlers
 import os
 import time
 
+import qcodes as qc
 from qcodes import config
 from qcodes.instrument.parameter import Parameter
 
@@ -672,7 +673,7 @@ def _extract_arg_from_config(config_path, arg, is_station_arg=False):
 
     if arg not in config_elem:
         raise KeyError(
-            f'Key qc.config.user.{config_path}.{arg} must be set '
+            f'Key qc.config.user.functions.{config_path}.{arg} must be set '
             f'or explicit kwarg {arg} must be passed'
         )
     elem = config_elem[arg]
@@ -698,11 +699,11 @@ def _transform_args_to_kwargs(func, args, kwargs):
     return new_kwargs
 
 
-def args_from_config(config_path, args=(), kwargs=(), station_args=()):
+def args_from_config(config_path, args=(), kwargs={}, station_args=()):
     def decorator(func):
         @wraps(func)
         def wrapped_function(*func_args, **func_kwargs):
-            # Transform args to kwargs
+            # Transform args to kwargs by looking at function arg positions
             merged_kwargs = _transform_args_to_kwargs(func, func_args, func_kwargs)
 
             for arg in args:
@@ -716,7 +717,6 @@ def args_from_config(config_path, args=(), kwargs=(), station_args=()):
                 try:
                     merged_kwargs[arg] = _extract_arg_from_config(config_path, arg=arg, is_station_arg=False)
                 except KeyError:
-                    print('keyerro')
                     merged_kwargs[arg] = val
 
             for arg in station_args:

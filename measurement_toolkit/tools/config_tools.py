@@ -221,6 +221,7 @@ def initialize_config(
             database_idx=database_idx,
             silent=silent
         )
+        config.user.database_idx = database_idx
     else:
         database = initialise_database()
 

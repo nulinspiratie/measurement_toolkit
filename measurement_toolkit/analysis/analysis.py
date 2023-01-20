@@ -23,14 +23,6 @@ __all__ = [
     "find_up_proportion",
     "count_blips",
     "analyse_traces",
-    "analyse_EPR",
-    "determine_threshold_up_proportion",
-    "determine_threshold_up_proportion_single_state",
-    "analyse_flips",
-    "Analysis",
-    "AnalyseEPR",
-    "AnalyseElectronReadout",
-    "AnalyseMultiStateReadout",
 ]
 
 logger = logging.getLogger(__name__)
@@ -151,7 +143,9 @@ def find_high_low(
 
     # Perform a histogram over all voltages in all traces. These bins will be
     # used to determine two peaks, corresponding to low/high voltage
-    hist, bin_edges = np.histogram(np.ravel(traces), bins=30)
+    traces_1D = np.ravel(traces)
+    traces_1D = traces_1D[~np.isnan(traces_1D)]
+    hist, bin_edges = np.histogram(traces_1D, bins=30)
 
     # Determine minimum number of bins between successive histogram peaks
     if min_voltage_difference is not None:

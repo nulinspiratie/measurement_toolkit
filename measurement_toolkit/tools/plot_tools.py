@@ -158,14 +158,15 @@ def plot_data(
 
             # Apply modifications for 2d colorplots
             is_2d = any(isinstance(child, QuadMesh) for child in ax.get_children())
-            if is_2d and diverging_cmap: 
-                try:  # Wrap in try/except because it's still experimental
+            if is_2d:
                     # Optionally modify clim
                     if clim is not None:
                         ax.set_clim(*clim)
                     else:
                         ax.set_clim(*ax.get_lim())
 
+            if is_2d and diverging_cmap: 
+                try:  # Wrap in try/except because it's still experimental
                     # Set diverging cmap
                     cmap_kwargs = {'positive_cmap': plot_kwargs.get('cmap')}
                     if type(diverging_cmap) != bool and isinstance(diverging_cmap, (float, int)):
@@ -179,7 +180,6 @@ def plot_data(
                     ax.set_diverging_cmap(**cmap_kwargs)
                 except Exception as e:
                     warnings.warn(f'Error setting 2d property: {e}')
-
 
         if len(figure_list) == 1:
             figure_list = figure_list[0]

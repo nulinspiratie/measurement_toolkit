@@ -21,6 +21,9 @@ from .analysis import find_high_low, count_blips
 
 from qcodes import DataSet
 
+
+__all__ = ['extract_tunnel_times']
+
 logger = logging.getLogger(__name__)
 
 
@@ -888,14 +891,40 @@ def analyse_tunnel_times_measurement(
     return results
 
 
-def extract_tunnel_times(data, ax=None, silent=False, threshold_voltage=None):
+def extract_tunnel_times(
+    data_or_arr, 
+    ax=None, 
+    silent=False, 
+    threshold_voltage=None,
+    min_threshold_difference=50e-6,
+):
     from measurement_toolkit.tools import convert_to_dataset
-    data = convert_to_dataset(data)
-    
-    arr = data.RF_inphase
 
+    # Extract array
+    if isinstance(data_or_arr, (np.ndarray, xarray.DataArray)):
+        arr = data_or_arr
+    else:
+        # Assume we have a dataset, extract array
+        data = data_or_arr
+        if isinstance(data_or_arr, int):
+            data = convert_to_dataset(data)
+
+        if len(data.data_vars) == 1:
+            arr = next(iter(data.data_vars.values()))
+        elif 'RF_inphase' in data.data_vars:
+            arr = data.data_vars['RF_inphase']
+        else:
+            raise RuntimeError('Could not determine array to extract runnel rates')
+    voltages = list(arr.coords.values())[-2]
+
+    # Extract threshold voltage
     if threshold_voltage is None:
-        high_low_result = find_high_low(arr, min_voltage_difference = .05e-3, threshold_method='mean', plot=False);
+        high_low_result = find_high_low(
+            arr, 
+            min_voltage_difference=min_threshold_difference, 
+            threshold_method='mean', 
+            plot=not silent
+        );
         high_low_result['low'].pop('traces')
         high_low_result['high'].pop('traces')
         if not silent:
@@ -903,6 +932,7 @@ def extract_tunnel_times(data, ax=None, silent=False, threshold_voltage=None):
             print(high_low_result)
         threshold_voltage = high_low_result['threshold_voltage']
 
+    # Extract tunneling times
     blips_results = []
     for row in arr:
         blips_result = count_blips(
@@ -913,23 +943,44 @@ def extract_tunnel_times(data, ax=None, silent=False, threshold_voltage=None):
             sample_rate=20e3
         )
         blips_results.append(blips_result)
-    low_durations = [blips_result['low_blip_durations'] for blips_result in blips_results]
-    high_durations = [blips_result['high_blip_durations'] for blips_result in blips_results]
-    voltages = data.gate_DC6_DC79
-
+    blip_durations = {
+        key: [blips_result[f'{key}_blip_durations'] for blips_result in blips_results]
+        for key in ['low', 'high']
+    }
+    
+    # Extract characteristic tunnel times
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=RuntimeWarning)
         tunnel_low = xarray.DataArray(
-            [np.mean(blips_result['low_blip_durations']) for blips_result in blips_results], 
+            [np.mean(blips_row) for blips_row in blip_durations['low']], 
             coords=[voltages], name="Average tunnel out time", attrs={'units': 's'})
         tunnel_high = xarray.DataArray(
-            [np.mean(blips_result['high_blip_durations']) for blips_result in blips_results],
+            [np.mean(blips_row) for blips_row in blip_durations['high']], 
             coords=[voltages], name="Average tunnel in time", attrs={'units': 's'})
+
+    # Plot results
     if ax is None:
         fig, ax = plt.subplots()
-    tunnel_low.plot(label='Tunnel out', color='C0')
-    tunnel_high.plot(label='Tunnel in', color='C1')
+    tunnel_low.plot(label='Tunnel out', color='C0', marker='o', ms=2)
+    tunnel_high.plot(label='Tunnel in', color='C1', marker='o', ms=2)
     ax.set_yscale('log')
     ax.set_ylabel('Average tunnel time (s)')
     if not any(isinstance(child, mpl.legend.Legend) for child in ax.get_children()):
         ax.legend();
+
+
+def extract_first_tunnel_events(
+    arr, 
+    threshold=None, 
+    positive_edge=True,
+    t_skip=None,
+    sampling_rate=None
+):
+    if arr.ndim > 2:
+        return np.array([
+            extract_first_tunnel_events(
+                arr_2D, threshold=threshold
+            )
+            for arr_2D in arr])
+
+    

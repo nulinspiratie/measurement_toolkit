@@ -199,10 +199,12 @@ def create_new_notebook(path, open=False, create_dirs=False, cells=None):
 
 
 def configure_device_folder(
-    root_folder, 
+    root_folder=None, 
     silent=True, 
     create_daily_measurement_notebook=True
 ):
+    if root_folder is None:
+        root_folder = qc.config.user.analysis_folder
     root_folder = Path(root_folder)
 
     folders = [

@@ -48,7 +48,9 @@ def measure_repeatedly(
         measure_params = station.measure_params
     elif isinstance(measure_params, _BaseParameter):
         measure_params = [measure_params]
-    measure_label = '_'.join(param.name for param in measure_params)
+
+    param_names = [getattr(param, 'name', 'None') for param in measure_params]
+    measure_label = '_'.join(param_names)
 
     time_parameter = TimeParameter()
 

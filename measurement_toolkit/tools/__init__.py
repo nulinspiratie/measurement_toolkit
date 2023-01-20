@@ -8,6 +8,7 @@ from .analysis_tools import *
 from .gate_tools import *
 from .notebook_tools import *
 from .config_tools import *
+from .trace_tools import *
 from .parameter_container import *
 from .instruments import *
 
@@ -22,6 +23,7 @@ from . import (
     analysis_tools,
     gate_tools,
     config_tools,
+    trace_tools,
     notebook_tools,
     parameter_container,
     instruments
@@ -35,6 +37,7 @@ __all__ += peak_tools.__all__
 __all__ += analysis_tools.__all__
 __all__ += gate_tools.__all__
 __all__ += config_tools.__all__
+__all__ += trace_tools.__all__
 __all__ += notebook_tools.__all__
 __all__ += parameter_container.__all__
 __all__ += instruments.__all__

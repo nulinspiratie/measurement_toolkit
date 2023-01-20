@@ -2,6 +2,7 @@
 from versioningit.logging import log
 log.disabled = True
 
+from .analysis import *
 from .parameters import *
 from .tools import *
 from .measurements import *
@@ -11,7 +12,14 @@ import qcodes as qc
 
 
 __all__ = ['qc']
-from . import parameters, measurements, tools, code_injections
+from . import (
+    analysis,
+    parameters, 
+    measurements, 
+    tools, 
+    code_injections
+)
+__all__ += analysis.__all__
 __all__ += parameters.__all__
 __all__ += measurements.__all__
 __all__ += tools.__all__

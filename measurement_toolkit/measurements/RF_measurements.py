@@ -1,5 +1,6 @@
 import time
 from time import sleep
+from pyvisa import VisaIOError
 import numpy as np
 from matplotlib import pyplot as plt
 from functools import partial
@@ -23,6 +24,7 @@ def get_slew_rate(qdac_channel):
 class QDacSweeper():
     def __init__(self, name, qdac_channel):
         self.name = name
+        self.unit = 'V'
         self.qdac_channel = qdac_channel
         self.qdac = self.qdac_channel.parent
 
@@ -73,6 +75,7 @@ class QDac2Sweeper():
 
     def __init__(self, name, qdac_channel, trigger_channel, max_ramp_rate=0, delay_start=None, scale=None, dV_limit=None):
         self.name = name
+        self.unit = 'V'
         self.qdac_channel = qdac_channel
         self.trigger_channel = trigger_channel
         self.scale = scale or qdac_channel.v.scale
@@ -194,8 +197,14 @@ class QDac2Sweeper():
         self.sweep_object.start()
 
         if block:
-            while self.sweep_object.cycles_remaining():
+            cycles_remaining = True
+            while cycles_remaining:
                 time.sleep(10e-3)
+                try:
+                    cycles_remaining = self.sweep_object.cycles_remaining()
+                except VisaIOError:
+                    print('QDac visa error, trying again in 1 second')
+                    sleep(1)
 
     def disable_trigger(self):
         trigger_id = int(self.trigger_channel.short_name[-1])

@@ -75,9 +75,12 @@ class ParameterContainer(Metadatable):
 
     def snapshot_base(self, update: Optional[bool] = False, params_to_skip_update: Optional[Sequence[str]] = None) -> Dict[Any, Any]:
         snapshot = {}
-        for parameter_container in self.nested_containers.values():
-            snapshot.update(parameter_container.snapshot())
+
         self.update()
+
+        for parameter_container in self.nested_containers.values():
+            snapshot.update(parameter_container.snapshot(update=False))
+            
         snapshot.update(self.parameters)
 
         for name, parameter_info in snapshot.items():
@@ -113,7 +116,6 @@ class ParameterContainer(Metadatable):
                 indent_level=kwargs.get('indent_level', 0)
             )
         else:
-            self.update()
             return self.get_parameter_values()
 
     def call_with_args(self, *args, **kwargs):

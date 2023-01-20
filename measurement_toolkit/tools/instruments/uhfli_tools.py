@@ -5,6 +5,7 @@ from functools import partial
 from time import sleep, perf_counter
 from typing import Iterable
 from contextlib import contextmanager
+from tqdm import tqdm
 
 import qcodes as qc
 from qcodes.instrument import InstrumentBase
@@ -14,6 +15,7 @@ from qcodes.dataset.measurement_loop import running_measurement, MeasurementLoop
 from measurement_toolkit.tools.plot_tools import plot_data
 from measurement_toolkit.tools.data_tools import load_data
 from measurement_toolkit.tools.analysis_tools import optimize_IQ
+from measurement_toolkit.tools.trace_tools import *
 
 
 from contextlib import contextmanager
@@ -49,7 +51,8 @@ class UHFLI_Interface(InstrumentBase):
         demodulator_idx=0, 
         input_idx=0, 
         output_idx=0,
-        phase_shift=0
+        phase_shift=0,
+        save_hdf5=True
     ):
         super().__init__(name=name)
 
@@ -81,6 +84,7 @@ class UHFLI_Interface(InstrumentBase):
         self._trace_context = False
         self._acquisition_signals = []
         self._timeout = None
+        self.save_hdf5 = save_hdf5
 
         self.measurement_params = {}
         self.measurement_params['I'] = Parameter(
@@ -195,7 +199,7 @@ class UHFLI_Interface(InstrumentBase):
         demodulator.harmonic(1)  # Use first harmonic
         demodulator.bypass(False)  # Bypass filters
         demodulator.order(3)  # Third order filter
-        demodulator.rate(50e3)  # Data transfer rate (sets maximum sampling rate)
+        demodulator.rate(200e3)  # Data transfer rate (sets maximum sampling rate)
         demodulator.adcselect(input_idx)  # Use channel 1 (idx 0)
         demodulator.oscselect(oscillator_idx)  # Use oscillator 1 (idx 0)
 
@@ -278,6 +282,10 @@ class UHFLI_Interface(InstrumentBase):
 
                 if time_constant is None:
                     time_constant = original_time_constant
+                else:
+                    # Update time constant since UHFLI only allows specific values
+                    self.time_constant(time_constant)
+                    time_constant = self.time_constant()
 
                 # Subscribe to signals
                 self.daq_raw.unsubscribe('*')
@@ -295,7 +303,6 @@ class UHFLI_Interface(InstrumentBase):
                 self.daq.grid.cols(num)  # Points per trace
                 self.daq.grid.rows(traces)  # Points per trace
                 self.daq.grid.mode('linear')  # Not sure what this does
-                self.time_constant(time_constant)
                 self.daq.duration(time_constant * delay_scale * num)
                 self.daq.delay(0)
                 
@@ -311,18 +318,27 @@ class UHFLI_Interface(InstrumentBase):
         self.daq_raw.execute()
         sleep(0.03)
 
-    def retrieve_acquisition(self, timeout=None):
+    def retrieve_acquisition(self, timeout=None, silent=True):
         # Calculate timeout
         if timeout is None:
-            timeout = max(3, 3 * self.daq.grid.cols.get_latest() * self.time_constant.get_latest())
+            timeout = max(3, 3 * self.daq.grid.cols.get_latest() * self.daq.grid.rows.get_latest() * self.time_constant.get_latest())
 
         t0 = perf_counter()
+        if not silent:
+            progress_bar = tqdm(total=100)
+
         while not self.daq_raw.finished():
+            percentage_complete = round(self.daq_raw.progress()[0]*100, 1)
+
             if perf_counter() - t0 > timeout:
                 raise RuntimeError(
-                    'Could not finish acquisition within timeout. '
-                    f'Percentage complete: {self.daq_raw.progress()[0]*100:.1f}%'
+                    f'Could not finish acquisition within timeout {timeout} s. '
+                    f'Percentage complete: {percentage_complete:.1f}%'
                 )
+
+            if not silent:
+                progress_bar.update(percentage_complete - progress_bar.n)
+
             sleep(0.03)
         # Record the 10 last acquisition durations for performance metrics
         self._acquisition_durations = self._acquisition_durations[-9:] + [perf_counter() - t0]
@@ -330,7 +346,6 @@ class UHFLI_Interface(InstrumentBase):
         raw_results = self.daq_raw.read(flat=True)
         self.daq_raw.finish()
         return raw_results
-
 
     def acquire_trace(
         self, 
@@ -341,7 +356,8 @@ class UHFLI_Interface(InstrumentBase):
         delay_scale=1, 
         plot=False, 
         disable_lockin_outputs=True, 
-        trigger_channel=None
+        trigger_channel=None,
+        silent=True
     ):
         # Ensure we're set up for trace acquisitions
         if not self._trace_context:
@@ -353,12 +369,12 @@ class UHFLI_Interface(InstrumentBase):
                 disable_lockin_outputs=disable_lockin_outputs,
                 trigger_channel=trigger_channel,
             ):
-                return self.acquire_trace(plot=plot)
+                return self.acquire_trace(plot=plot, timeout=timeout, silent=silent)
 
         # Perform acquisition
         self.start_acquisition()
 
-        raw_results = self.retrieve_acquisition(timeout=timeout)
+        raw_results = self.retrieve_acquisition(timeout=timeout, silent=silent)
 
         results = self.analyse_trace_results(raw_results, plot=plot)
         return results
@@ -372,13 +388,17 @@ class UHFLI_Interface(InstrumentBase):
         delay_scale=1,
         plot=False, 
         disable_lockin_outputs=True, 
-        trigger=False,
-        signals=('I', 'Q', 'signal_std', 'signal_mean')
+        trigger_channel=None,
+        signals=('I', 'Q', 'signal_std', 'signal_mean'),
+        save_hdf5=None,
+        silent=True,
     ):
+        """Measure 1D time trace"""
         if time_constant is None:
             time_constant = self.time_constant()
+        if save_hdf5 is None:
+            save_hdf5 = self.save_hdf5
 
-        sweep = Sweep(np.arange(num) * time_constant * delay_scale, 'time', unit='s')
         results = self.acquire_trace(
             timeout=timeout, 
             num=num, 
@@ -387,17 +407,38 @@ class UHFLI_Interface(InstrumentBase):
             delay_scale=delay_scale,
             plot=plot,
             disable_lockin_outputs=disable_lockin_outputs,
-            trigger=trigger,
+            trigger_channel=trigger_channel,
+            silent=silent,
         )
+        
+        
+        num = len(results['I'])
+        sweep = Sweep(np.arange(num) * time_constant * delay_scale, 'time', unit='s')
         with MeasurementLoop('RF_trace') as msmt:
             for signal in signals:
-                msmt.measure(
-                    results[signal], 
-                    name=self.measurement_params[signal].name, 
-                    label=self.measurement_params[signal].label,
-                    unit=self.measurement_params[signal].unit, 
-                    setpoints=sweep
-                )
+                result = results[signal]
+                if save_hdf5 and np.ndim(result):
+                    save_traces(
+                        traces=result,
+                        ensure_new=False,
+                        file_suffix=None,
+                        array_name=signal,
+                        metadata={
+                            'sample_rate': 1 / time_constant,
+                            'label': self.measurement_params[signal].label,
+                            'long_name': self.measurement_params[signal].label,
+                            'unit': self.measurement_params[signal].unit,
+                        },
+                    )
+                    msmt.skip()
+                else:
+                    msmt.measure(
+                        result, 
+                        name=self.measurement_params[signal].name, 
+                        label=self.measurement_params[signal].label,
+                        unit=self.measurement_params[signal].unit, 
+                        setpoints=sweep
+                    )
         return results
 
     def analyse_trace_results(self, raw_results, plot=False):
@@ -463,6 +504,7 @@ class UHFLI_Interface(InstrumentBase):
         trigger_channel=None,
         timeout=None,
         plot=True,
+        signals=['I', 'Q']
     ):
         assert not self._trace_context
         
@@ -491,7 +533,19 @@ class UHFLI_Interface(InstrumentBase):
 
             raw_results = self.retrieve_acquisition(timeout=timeout)
 
-            results = self.analyse_trace_results(raw_results, plot=plot)
+            results = self.analyse_trace_results(raw_results, plot=False)
+
+            fast_voltages = np.linspace(fast_sweep.sweep_settings['V_start'], fast_sweep.sweep_settings['V_stop'], num)
+            fast_sweep_array = Sweep(fast_voltages, fast_sweep.name, unit=fast_sweep.unit)
+            with MeasurementLoop(f'RF_1D_{fast_sweep.name}') as msmt:
+                for signal in signals:
+                    param = self.measurement_params[signal]
+                    msmt.measure(
+                        results[signal], name=param.name, label=param.label, unit=param.unit, setpoints=[fast_sweep_array]
+                    )
+
+            if plot:
+                plot_data(msmt.dataset)
             return results
 
     def gate_scan_2D(
@@ -553,7 +607,7 @@ class UHFLI_Interface(InstrumentBase):
 
             # Record results
             fast_voltages = np.linspace(fast_sweep.sweep_settings['V_start'], fast_sweep.sweep_settings['V_stop'], num)
-            fast_sweep_array = Sweep(fast_voltages, fast_sweep.name)
+            fast_sweep_array = Sweep(fast_voltages, fast_sweep.name, unit=fast_sweep.unit)
             with MeasurementLoop(f'RF_2D_{slow_sweep.parameter.name}_{fast_sweep.name}') as msmt:
                 for signal in signals:
                     param = self.measurement_params[signal]
