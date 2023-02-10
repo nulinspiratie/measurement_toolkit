@@ -114,7 +114,8 @@ def extract_peaks(
 ):
     # Convert to array 
     array = convert_to_array(dataset_or_array, array_name=array_name)
-    xvals = list(array.coords.values())[-1]
+    coords = [arr for arr in array.coords.values() if arr.ndim]
+    xvals = coords[-1]
 
     # Extract peaks by looping over possible prominences
     prominences = [prominence] if isinstance(prominence, float) else prominence
@@ -353,17 +354,18 @@ def plot_compensated_charge_transition_measurement(data, print_summary=True):
 
 
 ### Extract peak lines from 2D plots
-def extract_peak_lines(peaks_array, plot=False):
+def extract_peak_lines(peaks_array, plot=False, rho=1, theta=np.pi/180, threshold=200):
     import cv2
 
-    peaks_array = np.array(peaks_array, dtype='uint8')
-    result = cv2.HoughLines(peaks_array,1,np.pi/180,200)
+    peaks_arr = np.array(peaks_array, dtype='uint8')
+    plt.pcolormesh(peaks_arr)
+    result = cv2.HoughLines(peaks_arr,rho,theta, threshold)
     if result is None:
         print('No peak lines found')
         return []
     result = result[:,0]  # Somehow we receive a 3D array where second dim has length 1
 
-    N_y, N_x = peaks_array.shape
+    N_y, N_x = peaks_arr.shape
     # Convert coordinates to x and y
     peak_lines = []
     for rho, theta in result:
@@ -406,6 +408,9 @@ def group_peaks_by_lines(peaks_array, peak_lines, max_distance=4e-3):
     for peak_line in peak_lines:
         peak_line['peaks'] = []
 
+    if not peak_lines:
+        return
+
     for k, peaks_row in enumerate(peaks_array.values):
         for kk, idx in enumerate(peaks_row):
             if not idx:
@@ -446,7 +451,7 @@ def plot_peaks_2D(peaks_array, peak_lines, **kwargs):
         plt.plot(x, y, marker='o', ms=1, linestyle='', color=color)
 
 
-def extract_peaks_2D(array, prominence, max_distance=1e-3, plot=True):
+def extract_peaks_2D(array, prominence, max_distance=1e-3, line_threshold=200, plot=True):
     # Boolean array where 1 indicates that a datapoint is a peak
     peaks_array = xarray.DataArray(np.zeros(shape=array.shape), coords=array.coords)
 
@@ -458,7 +463,7 @@ def extract_peaks_2D(array, prominence, max_distance=1e-3, plot=True):
 
         peaks_array[k, peak_result['peak_idxs']] = 1
 
-    peak_lines = extract_peak_lines(peaks_array)
+    peak_lines = extract_peak_lines(peaks_array, threshold=line_threshold)
 
     group_peaks_by_lines(peaks_array, peak_lines, max_distance=max_distance)
 

@@ -254,7 +254,8 @@ def get_Fourier_component(arr, frequency, xvals=None):
     sine_component = sine * yvals
     cosine_component = cosine * yvals
 
-    demodulated_signal = np.sum(cosine_component) + 1.j * np.sum(sine_component)
+    demodulated_signal = np.nansum(cosine_component) + 1.j * np.nansum(sine_component)
+    demodulated_signal /= np.sum(~np.isnan(cosine_component))
 
     return {
         'demodulated_signal': demodulated_signal,

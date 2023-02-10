@@ -114,7 +114,7 @@ def save_traces(
     ensure_new: bool = False,
     file_suffix=None,
     array_name: str = '',
-    precision: Union[int, None] = 7,
+    precision: Union[int, None] = None,
     compression: int = 4,
     metadata: dict = None,
     silent=True,

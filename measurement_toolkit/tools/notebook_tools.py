@@ -6,6 +6,9 @@ from typing import Union
 import logging
 import nbformat
 from IPython import get_ipython
+from copy import deepcopy
+import nbconvert
+import nbformat
 
 import qcodes as qc
 
@@ -41,6 +44,49 @@ def get_notebook_path():
                 return Path(jupServ["root_dir"]) / session["notebook"]['path']
 
 
+def prepare_notebook_for_conversion(notebook, input_code=True):
+    new_notebook = deepcopy(notebook)
+    
+    # Convert data description cells, i.e. "#{idx}"
+    for cell in new_notebook['cells']:
+        if cell['cell_type'] != 'markdown':
+            continue
+        if not cell['source'].startswith('#'):
+            continue
+        if len(cell['source']) < 2:
+            continue
+        if not cell['source'][1].isdigit():
+            continue
+        cell['source'] = '✎' + cell['source']
+
+    # Remove plot object outputs
+    for cell in new_notebook['cells']:
+        if cell['cell_type'] != 'code':
+            continue
+        if 'outputs' not in cell:
+            continue
+
+        remove_outputs = []
+        for output in cell['outputs']:
+            if 'data' not in output or 'text/plain' not in output['data']:
+                continue
+            if output.get('output_type') != 'execute_result':
+                continue
+
+            exclude_start_strings = [
+                '<', '(<', '(array(', '[<', '([', 'array(', 'Text('
+            ]
+            text_data = output['data']['text/plain']
+            is_excluded = any(text_data.startswith(elem) for elem in exclude_start_strings)
+            if is_excluded:
+                remove_outputs.append(output)
+                
+        for remove_output in remove_outputs:
+            cell['outputs'].remove(remove_output)
+
+    return new_notebook
+
+
 def export_notebook(notebook_name=None, input_code=False, output='html'):
     from IPython import get_ipython
     ipython = get_ipython()
@@ -52,18 +98,41 @@ def export_notebook(notebook_name=None, input_code=False, output='html'):
     assert notebook_path.exists()
     print(f'Converting notebook "{notebook_path}"')
 
-    # compose command
-    command_args = [
-        'jupyter nbconvert',
-        f'"{notebook_path}"',
-        f'--to={output}'
-    ]
-    if not input_code:
-        command_args.append('--no-input')
-    command = ' '.join(command_args)
-    # print(f'Running command: {command}\n')
+    if output != 'html':
+        # compose command
+        command_args = [
+            'jupyter nbconvert',
+            f'"{notebook_path}"',
+            f'--to={output}'
+        ]
+        if not input_code:
+            command_args.append('--no-input')
+        command = ' '.join(command_args)
+        # print(f'Running command: {command}\n')
 
-    ipython.run_cell_magic('cmd', '', command)
+        ipython.run_cell_magic('cmd', '', command)
+    else:
+        # Read notebook into dict
+        notebook = nbformat.read(notebook_path, as_version=4)
+
+        # Prepare notebook
+        notebook = prepare_notebook_for_conversion(notebook)
+        
+        # Create HTML exporter
+        html_exporter = nbconvert.HTMLExporter()
+
+        # Remove input code
+        if not input_code:
+            html_exporter.exclude_input = True
+            html_exporter.exclude_input_prompt = True
+            html_exporter.exclude_output_prompt = True
+
+        # Convert notebook to HTML string
+        notebook_data, resources = html_exporter.from_notebook_node(notebook)
+
+        # Save notebook to file
+        notebook_html_path = notebook_path.with_suffix('.html')
+        notebook_html_path.write_text(notebook_data, encoding='utf8')
 
     # Print notebook link
     from IPython.core.display import display, HTML

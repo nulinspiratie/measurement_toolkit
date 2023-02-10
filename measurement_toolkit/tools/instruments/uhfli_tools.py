@@ -77,7 +77,8 @@ class UHFLI_Interface(InstrumentBase):
         self.output_amplitude = self.output_channel.amplitudes[oscillator_idx].value
         self.frequency = self.oscillator.freq
         self.time_constant = self.demodulator.timeconstant
-        for key in ['output_amplitude', 'frequency', 'time_constant']:
+        self.data_transfer_rate = self.demodulator.rate
+        for key in ['output_amplitude', 'frequency', 'time_constant', 'data_transfer_rate']:
             self.parameters[key] = getattr(self, key)
 
         # Trace-related attributes
@@ -106,7 +107,7 @@ class UHFLI_Interface(InstrumentBase):
             get_cmd=lambda: self._signal['R']
         )
         self.measurement_params['theta'] = Parameter(
-            name='RF_magnitude',
+            name='RF_phase',
             label='RF signal phase',
             unit='deg',
             get_cmd=lambda: self._signal['theta']
@@ -137,6 +138,13 @@ class UHFLI_Interface(InstrumentBase):
             initial_value=phase_shift
         )
         self.parameters['phase_shift'] = self.phase_shift
+
+        self.measure_I = Parameter(
+            name='RF_inphase',
+            label='RF signal In-phase',
+            unit='V',
+            get_cmd=lambda: self._measure_components(['I'])[0]
+        )
 
     def initialize(self):
         self.disable_channels()
@@ -230,7 +238,7 @@ class UHFLI_Interface(InstrumentBase):
                 param = self.measurement_params[component]
                 msmt.measure(param)
         
-        return {signal[component] for component in components}
+        return [signal[component] for component in components]
 
     def measure_I_Q(self):
         return self._measure_components(['I', 'Q'])
@@ -287,6 +295,19 @@ class UHFLI_Interface(InstrumentBase):
                     self.time_constant(time_constant)
                     time_constant = self.time_constant()
 
+                # Ensure data transfer rate exceeds acquisition rate
+                acquisition_rate = 1 / time_constant / delay_scale
+                data_transfer_rate = self.data_transfer_rate()
+                if data_transfer_rate < acquisition_rate:
+                    transfer_rates = [27465.8203125 * 2**x for x in range(7)]
+                    new_transfer_rate = next(rate for rate in transfer_rates if rate > acquisition_rate)
+                    print(
+                        f'Data transfer rate {data_transfer_rate:.0f} is lower than '
+                        f'acquisition rate {acquisition_rate:.0f}, temporarily setting '
+                        f'to new value {new_transfer_rate}'
+                    )
+                    self.data_transfer_rate(new_transfer_rate)
+
                 # Subscribe to signals
                 self.daq_raw.unsubscribe('*')
                 self._acquisition_signals = [
@@ -313,6 +334,7 @@ class UHFLI_Interface(InstrumentBase):
             finally:
                 self._trace_context = False
                 self.time_constant(original_time_constant)
+                self.data_transfer_rate(data_transfer_rate)
 
     def start_acquisition(self):
         self.daq_raw.execute()
@@ -343,7 +365,7 @@ class UHFLI_Interface(InstrumentBase):
         # Record the 10 last acquisition durations for performance metrics
         self._acquisition_durations = self._acquisition_durations[-9:] + [perf_counter() - t0]
 
-        raw_results = self.daq_raw.read(flat=True)
+        self._raw_results = raw_results = self.daq_raw.read(flat=True)
         self.daq_raw.finish()
         return raw_results
 
@@ -558,7 +580,8 @@ class UHFLI_Interface(InstrumentBase):
         timeout=None,
         plot=True,
         silent=True,
-        signals=['I', 'Q']
+        signals=['I', 'Q'],
+        verify=True,
     ):
         assert not self._trace_context
         
@@ -587,14 +610,17 @@ class UHFLI_Interface(InstrumentBase):
             percentage_complete = 0
             for val in slow_sweep:
                 t0 = perf_counter()
-                for sweep_attempts in range(3):
-                    fast_sweep.sweep(block=True)
-                    trace_acquired, percentage_complete = self._wait_until_trace_acquired(
-                        initial_percentage_complete=percentage_complete
-                    )
-                    if trace_acquired:
-                        break
 
+                if verify:
+                    for sweep_attempts in range(3):
+                        fast_sweep.sweep(block=True)
+                        trace_acquired, percentage_complete = self._wait_until_trace_acquired(
+                            initial_percentage_complete=percentage_complete
+                        )
+                        if trace_acquired:
+                            break
+                else:
+                    fast_sweep.sweep(block=True)
                 if not silent:
                     print(f'Finished trace: {self.daq_raw.finished()} ({percentage_complete:.1f}% complete)')
                 
@@ -657,7 +683,8 @@ class UHFLI_Interface(InstrumentBase):
         timeout=None,
         plot=True,
         silent=True,
-        signals=['R', 'theta']
+        signals=['I', 'Q'],
+        verify=True,
     ):
         assert not self._trace_context
 
@@ -673,7 +700,8 @@ class UHFLI_Interface(InstrumentBase):
             timeout=timeout,
             plot=plot,
             silent=silent,
-            signals=signals
+            signals=signals,
+            verify=verify,
         )
 
     # Analysis

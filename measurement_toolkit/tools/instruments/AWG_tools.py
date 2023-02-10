@@ -51,6 +51,28 @@ class DCPulse(Pulse):
         return blueprint
 
 @dataclass
+class RampPulse(Pulse):
+    name: str
+    amplitude_start: float
+    amplitude_stop: float
+    duration: float
+    marker: bool = False
+
+    def create_blueprint(self, amplitude_scale):
+        assert amplitude_scale < 1
+
+        blueprint = bb.BluePrint()
+        # blueprint.setSR(Pulse.sampling_rate)
+        amplitude_start = self.amplitude_start / amplitude_scale
+        amplitude_stop = self.amplitude_stop / amplitude_scale
+        blueprint.insertSegment(0, ramp, (amplitude_start, amplitude_stop), dur=self.duration, name=self.name)
+
+        if self.marker:
+            blueprint.marker1 = self.default_marker
+
+        return blueprint
+
+@dataclass
 class SinePulse(Pulse):
     name: str
     frequency: float

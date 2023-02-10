@@ -153,7 +153,8 @@ def combine_gates(
         max_difference=2e-3,
         precision=3,
         scales=None,
-        offsets=None
+        offsets=None,
+        name=None,
 ):
     station = qc.Station.default
 
@@ -166,7 +167,8 @@ def combine_gates(
         else:
             combined_gates.append(gate)
 
-    name = 'gate_' + '_'.join(f'DC{gate.DC_line}' for gate in gates)
+    if name is None:
+        name = 'gate_' + '_'.join(f'DC{gate.DC_line}' for gate in gates)
     # label = ' & '.join(f'{gate.name}:DC{gate.DC_line}' for gate in combined_gates)
 
     parameter = CombinedParameter(

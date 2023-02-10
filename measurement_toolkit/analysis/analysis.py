@@ -168,6 +168,7 @@ def find_high_low(
                    'increasing threshold')
             threshold_peak *= 1.5
     else:  # Could not identify two peaks after all attempts
+        print(f'Could not find two peaks in find_high_low, giving up')
         results = {
             "low": None,
             "high": None,

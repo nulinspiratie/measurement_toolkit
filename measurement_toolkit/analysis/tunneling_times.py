@@ -14,15 +14,14 @@ import h5py
 from statsmodels.base.model import GenericLikelihoodModel
 import itertools
 
+import qcodes as qc
 
 from .analysis import find_high_low, count_blips
 # from .fit_toolbox import DoubleExponentialFit, ExponentialFit
 # from silq.tools.trace_tools import extract_pulse_slices_from_trace_file
 
-from qcodes import DataSet
 
-
-__all__ = ['extract_tunnel_times']
+__all__ = ['extract_tunnel_times', 'extract_first_tunnel_events']
 
 logger = logging.getLogger(__name__)
 
@@ -736,7 +735,7 @@ def analyse_tunnel_times_measurement(
     if silent:
         detailed = False
 
-    if isinstance(data, DataSet):
+    if isinstance(data, qc.DataSet):
         data = data.load_traces()
 
     ### Extract blips
@@ -961,26 +960,119 @@ def extract_tunnel_times(
     # Plot results
     if ax is None:
         fig, ax = plt.subplots()
-    tunnel_low.plot(label='Tunnel out', color='C0', marker='o', ms=2)
-    tunnel_high.plot(label='Tunnel in', color='C1', marker='o', ms=2)
+    else:
+        fig = plt.gcf()
+
+    tunnel_low.plot(label='Tunnel out', color='C0', marker='o', ms=2, ax=ax)
+    tunnel_high.plot(label='Tunnel in', color='C1', marker='o', ms=2, ax=ax)
     ax.set_yscale('log')
     ax.set_ylabel('Average tunnel time (s)')
+    ax.grid('on')
     if not any(isinstance(child, mpl.legend.Legend) for child in ax.get_children()):
         ax.legend();
+
+    return {
+        'tunnel_low': tunnel_low,
+        'tunnel_high': tunnel_high,
+        'fig': fig, 
+        'ax': ax
+    }
 
 
 def extract_first_tunnel_events(
     arr, 
-    threshold=None, 
-    positive_edge=True,
+    threshold_voltage=None, 
+    positive_edge=None,
     t_skip=None,
-    sampling_rate=None
+    sampling_rate=None,
+    min_voltage_difference=20e-6,
+    plot=False,
+    voltages=None
 ):
-    if arr.ndim > 2:
-        return np.array([
-            extract_first_tunnel_events(
-                arr_2D, threshold=threshold
-            )
-            for arr_2D in arr])
+        
+    # Apply analysis to each 2D array in >2D array provided
+    if isinstance(arr, dict):
+        if threshold_voltage is None:
+            arr_merged = np.concatenate(list(arr.values()), axis=-1)
+            threshold_results = find_high_low(arr_merged, plot=False, min_voltage_difference=min_voltage_difference)
+            threshold_voltage = threshold_results['threshold_voltage']
 
-    
+        results = {}
+        for key, subarr in arr.items():
+            results[key] = extract_first_tunnel_events(
+                subarr, 
+                threshold_voltage=threshold_voltage,
+                positive_edge=positive_edge,
+                t_skip=t_skip,
+                sampling_rate=sampling_rate,
+            )
+
+        if plot:
+            for key, val in results.items():
+                plt.semilogy(voltages*1e3, val['mean_tunnel_time'], label=key, marker='o')
+            plt.xlabel(f'Voltage offset (mV)')
+            plt.ylabel('Mean tunnel time (s)')
+            plt.grid('on')
+            plt.legend()
+        return results
+
+    # Extract threshold_voltage
+    if threshold_voltage is None:
+        threshold_results = find_high_low(arr, plot=False, min_voltage_difference=min_voltage_difference)
+        threshold_voltage = threshold_results['threshold_voltage']
+
+    # Determine whether to start positive by if first element is above or below threshold
+    if positive_edge is None:
+        first_elems = arr.take(indices=(0,1,2), axis=-1)
+        mean_first_elem = np.nanmean(first_elems)
+        positive_edge = mean_first_elem < threshold_voltage
+        
+    if arr.ndim > 2:
+        results = {}
+        for arr_2D in arr:
+            result = extract_first_tunnel_events(
+                arr_2D, 
+                threshold_voltage=threshold_voltage,
+                positive_edge=positive_edge,
+                t_skip=t_skip,
+                sampling_rate=sampling_rate,
+            )
+            for key, val in result.items():
+                results.setdefault(key, [])
+                results[key].append(val)
+        results = {key: np.array(val) for key, val in results.items()}
+        return results
+
+    # Determine initial points to skip due to e.g. delay
+    if t_skip is None:
+        skip_pts = 0
+    else:
+        skip_pts = int(round(t_skip * sampling_rate))
+
+    subarr = arr[:, skip_pts:]
+
+    if positive_edge:
+        satisfies_condition = subarr > threshold_voltage
+    else:
+        satisfies_condition = subarr < threshold_voltage
+
+    tunnel_idxs = np.argmax(satisfies_condition, axis=1)
+    all_low = np.all(~satisfies_condition, axis=1)
+    tunnel_idxs = np.max([tunnel_idxs, all_low * subarr.shape[-1]], axis=0)
+
+    # Convert tunnel idxs to tunnel times
+    tunnel_times = tunnel_idxs / sampling_rate
+
+    # Filter out events where the voltage exceeds the threshold from the start
+    # num_zero = np.sum(tunnel_times == 0) / tunnel_times.size
+    # print(f'{num_zero=}')
+    tunnel_times[tunnel_times == 0] = np.nan
+
+    # Get mean tunnel times
+    mean_tunnel_time = np.nanmean(tunnel_times)
+
+    return {
+        'tunnel_times': tunnel_times,
+        'mean_tunnel_time': mean_tunnel_time
+    }
+
