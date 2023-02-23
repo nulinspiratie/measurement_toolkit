@@ -433,7 +433,6 @@ class UHFLI_Interface(InstrumentBase):
             silent=silent,
         )
         
-        
         num = len(results['I'])
         sweep = Sweep(np.arange(num) * time_constant * delay_scale, 'time', unit='s')
         with MeasurementLoop('RF_trace') as msmt:

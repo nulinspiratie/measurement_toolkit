@@ -2,6 +2,7 @@ from matplotlib import pyplot as plt
 from typing import List, Union
 from pathlib import Path
 import os
+import json
 import numpy as np
 import h5py
 from warnings import warn
@@ -14,6 +15,7 @@ from qcodes.dataset.sqlite.database import conn_from_dbpath_or_conn
 
 from measurement_toolkit.tools.data_tools import load_data
 
+channel_labels = {}
 
 __all__ = [
     'get_trace_filepath',
@@ -106,7 +108,6 @@ def get_trace_file(
 
     return file
         
-
 
 def save_traces(
     traces: np.ndarray,
@@ -212,6 +213,12 @@ def save_traces(
         loop_indices = msmt.loop_indices if msmt else ()
         file['traces'][array_name][loop_indices] = traces
 
+        # Add pulse sequence
+        pulse_sequence = getattr(qc.Station.default, 'pulse_sequence', None)
+        if pulse_sequence is not None and pulse_sequence.pulses:
+            pulse_sequence = qc.Station.default.pulse_sequence
+            file.attrs['pulse_sequence'] = json.dumps(pulse_sequence.snapshot())
+
         file.flush()
         file.swmr_mode = True  # Enable multiple readers to access this process
 
@@ -226,6 +233,7 @@ def load_traces(
     idxs=None,
     return_type='xarray',
     plot=False,
+    figsize=(10,7),
 ):
     assert return_type in ['numpy', 'xarray', 'hdf5']
 
@@ -268,6 +276,7 @@ def load_traces(
             else:
                 full_array_name = matching_arrays[0]
             array = file['traces'][full_array_name]
+            array.attrs['run_id'] = run_id
 
         if idxs:
             if not return_type == 'numpy':
@@ -307,17 +316,87 @@ def load_traces(
             pass
 
         if plot and return_type == 'xarray' and array.ndim in [1, 2]:
-            array.plot()
-            fig = plt.gcf()
-            ax = plt.gca()
-            ax.set_clim()
-            if run_id is not None:
-                fig.suptitle(f'#{run_id} RF traces')
+            pulse_sequence = json.loads(file.attrs.get('pulse_sequence', 'null'))
+            plot_traces(array, run_id=run_id, pulse_sequence=pulse_sequence, figsize=figsize)
 
     return array
 
 
-def segment_traces(traces, pulses, time_constant, group_pulses=True):
+def plot_traces(
+    traces, 
+    pulse_sequence=None, 
+    run_id=None,
+    figsize=(10,7)
+):
+    # Create figure and axes
+    if pulse_sequence is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig, axes = plt.subplots(
+            2, 1, 
+            figsize=figsize, 
+            sharex=True, 
+            height_ratios=[1, 3]
+        )
+        ax_pulse_sequence, ax = axes
+
+    traces.plot(ax=ax)
+    ax.set_clim()
+
+    if run_id is not None:
+        fig.suptitle(f'#{run_id} RF traces')
+
+    fig.tight_layout()
+
+    if pulse_sequence is not None:
+        plot_pulse_sequence(pulse_sequence, ax=ax_pulse_sequence)
+        # Align pulse sequence axis to main axis
+        pos = ax_pulse_sequence.get_position()
+        pos = [pos.x0, pos.y0, ax.get_position().width, pos.height]
+        ax_pulse_sequence.set_position(pos)
+
+
+def plot_pulse_sequence(pulse_sequence, ax=None):
+    if ax is None:
+        ax = plt.gca()
+
+    for ch_idx, ch in enumerate([1, 2]):
+        t = 0
+        t_list = [0]
+        voltages = [0]
+        for pulse in pulse_sequence['pulses']:
+            if pulse['class'] == 'DCPulse':
+                if isinstance(pulse['amplitude'], (float, int)):
+                    voltages += [pulse['amplitude'], pulse['amplitude']]
+                else:
+                    voltages += [pulse['amplitude'][ch_idx], pulse['amplitude'][ch_idx]]
+                t_list += [t, t + pulse['duration']]
+            if pulse['class'] == 'RampPulse':
+                amplitude_start = pulse['amplitude_start']
+                if not isinstance(pulse['amplitude_start'], (float, int)):
+                    amplitude_start = amplitude_start[ch_idx]
+                amplitude_stop = pulse['amplitude_stop']
+                if not isinstance(pulse['amplitude_stop'], (float, int)):
+                    amplitude_stop = amplitude_stop[ch_idx]
+                voltages += [amplitude_start, amplitude_stop]
+                t_list += [t, t + pulse['duration']]
+            if pulse['class'] == 'SinePulse':
+                dt = 1 / pulse['frequency'] / 20
+                t_vals = np.linspace(t, t+pulse['duration'], int(pulse['duration'] / dt))
+                voltages += list(np.sin(2 * np.pi * pulse['frequency'] * (t_vals - t) + pulse['phase']))
+                t_list += list(t_vals)
+            t += pulse['duration']
+
+        channel_label = channel_labels.get(ch, f'ch{ch}')
+        ax.plot(t_list, np.array(voltages) * 1e3, label=channel_label)
+
+    ax.set_ylabel(f'Amplitude (mV)')
+    ax.set_xlim(0, max(t_list))
+    ax.grid(axis='y')
+    ax.legend()
+
+
+def segment_traces(traces, time_constant, pulses=None, group_pulses=True):
     assert traces.ndim == 2
 
     if isinstance(traces, DataArray):

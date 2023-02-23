@@ -77,7 +77,7 @@ def measure_gate_leakage(
     Sweep a gate and check if it starts leaking.
     Ramps back at the end.
     """
-    from qcodes.dataset.measurement_loop import MeasurementLoop, Sweep, RepetitionSweep
+    from qcodes.dataset.measurement_loop import MeasurementLoop, Sweep
     if measure_current_function is None:
         measure_current_function = gate.i
 
@@ -119,7 +119,7 @@ def measure_gate_leakage(
                 verbose=verbose,
             )
             if isinstance(results['current'], (list, np.ndarray)):
-                for k in RepetitionSweep(len(results['current']), name='idx'):
+                for k in Sweep(np.arange(len(results['current'])), name='idx'):
                     msmt.measure(results["current"][k], "leakage_current", unit="A")
             else:
                 msmt.measure(results["current"], "leakage_current", unit="A")
@@ -159,7 +159,7 @@ def measure_gate_leakages(
     delay=100e-3,
     verbose=True,
 ):
-    from qcodes.dataset.measurement_loop import MeasurementLoop, Sweep, RepetitionSweep
+    from qcodes.dataset.measurement_loop import MeasurementLoop, Sweep
     
     # Ensure all voltages are within range
     for gate in gates:
@@ -174,7 +174,7 @@ def measure_gate_leakages(
         # Add gates to metadata
         msmt.dataset.add_metadata('gates', str([g.name for g in gates]))
 
-        for gate_idx in RepetitionSweep(len(gates), name="gate_idx"):
+        for gate_idx in Sweep(np.arange(len(gates)), name="gate_idx"):
             gate = gates[gate_idx]
 
             if verbose:

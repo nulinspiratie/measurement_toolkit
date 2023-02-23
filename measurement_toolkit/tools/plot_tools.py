@@ -344,6 +344,8 @@ def prettify_label(label):
     for elem in elems:
         if elem.startswith('V_'):
             subelems = elem.split(':')[0].split('_')[1:]
+            if subelems[-1].endswith(']'):
+                subelems[-1] = subelems[-1].split(' [')[0]
             if len(subelems) == 1:
                 adjusted_elems.append(rf'$V_\mathrm{{{subelems[0]}}}$')
             else:

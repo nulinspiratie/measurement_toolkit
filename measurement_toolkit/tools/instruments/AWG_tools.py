@@ -14,7 +14,21 @@ ramp = bb.PulseAtoms.ramp  # args: start, stop
 sine = bb.PulseAtoms.sine  # args: freq, ampl, off, phase
 
 
-__all__ = ['Pulse', 'DCPulse', 'SinePulse', 'create_sequence']
+__all__ = ['Pulse', 'DCPulse', 'RampPulse', 'SinePulse', 'create_sequence', 'add_final_compensation_pulse']
+
+
+class PulseSequence(qc.Parameter):
+    pulses = None
+
+    def snapshot_base(self, update=False):
+        if self.pulses is None:
+            return {}
+
+        snapshot = {
+            'pulses': [pulse.snapshot_base() for pulse in self.pulses]
+        }
+        return snapshot
+
 
 class Pulse:
     # sampling_rate: ClassVar[float] = 1e9
@@ -30,25 +44,38 @@ class Pulse:
             element.addBluePrint(channel, blueprint)
         return element
 
+    def snapshot_base(self):
+        raise NotImplementedError
+
 @dataclass
 class DCPulse(Pulse):
     name: str
     amplitude: float
     duration: float
-    marker: bool = False
 
-    def create_blueprint(self, amplitude_scale):
+    def create_blueprint(self, amplitude_scale, channel_idx=None):
         assert amplitude_scale < 1
 
         blueprint = bb.BluePrint()
         # blueprint.setSR(Pulse.sampling_rate)
-        amplitude = self.amplitude / amplitude_scale
+
+        amplitude = self.amplitude  
+        if isinstance(self.amplitude, (tuple, list)):
+            amplitude = amplitude[channel_idx]
+        amplitude /= amplitude_scale
+
         blueprint.insertSegment(0, ramp, (amplitude, amplitude), dur=self.duration, name=self.name)
 
-        if self.marker:
-            blueprint.marker1 = self.default_marker
-
         return blueprint
+
+    def snapshot_base(self):
+        return {
+            'name': self.name, 
+            'amplitude': self.amplitude, 
+            'duration': self.duration,
+            'class': 'DCPulse',
+        }   
+
 
 @dataclass
 class RampPulse(Pulse):
@@ -56,21 +83,35 @@ class RampPulse(Pulse):
     amplitude_start: float
     amplitude_stop: float
     duration: float
-    marker: bool = False
 
-    def create_blueprint(self, amplitude_scale):
+    def create_blueprint(self, amplitude_scale, channel_idx=None):
         assert amplitude_scale < 1
 
         blueprint = bb.BluePrint()
         # blueprint.setSR(Pulse.sampling_rate)
-        amplitude_start = self.amplitude_start / amplitude_scale
-        amplitude_stop = self.amplitude_stop / amplitude_scale
+        
+        amplitude_start = self.amplitude_start  
+        if isinstance(self.amplitude_start, (tuple, list)):
+            amplitude_start = amplitude_start[channel_idx]
+        amplitude_start /= amplitude_scale
+        
+        amplitude_stop = self.amplitude_stop  
+        if isinstance(self.amplitude_stop, (tuple, list)):
+            amplitude_stop = amplitude_stop[channel_idx]
+        amplitude_stop /= amplitude_scale
+
         blueprint.insertSegment(0, ramp, (amplitude_start, amplitude_stop), dur=self.duration, name=self.name)
 
-        if self.marker:
-            blueprint.marker1 = self.default_marker
-
         return blueprint
+
+    def snapshot_base(self):
+        return {
+            'name': self.name, 
+            'amplitude_start': self.amplitude_start, 
+            'amplitude_stop': self.amplitude_stop, 
+            'duration': self.duration,
+            'class': 'RampPulse',
+        }
 
 @dataclass
 class SinePulse(Pulse):
@@ -80,22 +121,32 @@ class SinePulse(Pulse):
     duration: float
     offset: float = 0
     phase: float = 0
-    marker: bool = False
 
-    def create_blueprint(self, amplitude_scale):
+    def create_blueprint(self, amplitude_scale, channel_idx=None):
         assert amplitude_scale < 1
 
         blueprint = bb.BluePrint()
         # blueprint.setSR(Pulse.sampling_rate)
-        amplitude = self.amplitude / amplitude_scale
+
+        amplitude = self.amplitude  
+        if isinstance(self.amplitude, (tuple, list)):
+            amplitude = amplitude[channel_idx]
+        amplitude /= amplitude_scale
         
         blueprint.insertSegment(0, sine, (self.frequency, amplitude, self.offset, self.phase), dur=self.duration, name=self.name)
 
-        if self.marker:
-            blueprint.marker1 = self.default_marker
-
         return blueprint
 
+    def snapshot_base(self):
+        return {
+            'name': self.name, 
+            'amplitude': self.amplitude, 
+            'frequency': self.frequency,
+            'offset': self.offset,
+            'phase': self.phase,
+            'duration': self.duration,
+            'class': 'SinePulse',
+        }
 
 def _apply_sweep_to_elem(element, sweeps, amplitude_scales):
     names, args, channels, iters = [], [], [], []
@@ -134,6 +185,7 @@ def create_sequence(
     plot=True, 
     sweeps=None,
     frequency_cutoff=None,
+    cutoff_order=1,
     silent=False
 ):
     AWG = getattr(qc.Station.default, 'AWG', None)
@@ -149,9 +201,16 @@ def create_sequence(
 
     # Create blueprint for each channel
     blueprints = []
-    for channel, amplitude_scale in amplitude_scales.items():
-        channel_blueprints = [pulse.create_blueprint(amplitude_scale=amplitude_scale) for pulse in pulses]
+    for channel_idx, (channel, amplitude_scale) in enumerate(amplitude_scales.items()):
+        channel_blueprints = [
+            pulse.create_blueprint(amplitude_scale=amplitude_scale, channel_idx=channel_idx) 
+            for pulse in pulses
+        ]
         blueprint = reduce(bb.BluePrint.__add__, channel_blueprints)
+
+        if marker:
+            blueprint.marker1 = Pulse.default_marker
+
         blueprints.append(blueprint)
         for blueprint in blueprints:
             blueprint.setSR(sampling_rate)
@@ -184,7 +243,10 @@ def create_sequence(
         sequence.setChannelOffset(channel, 0)
 
         if frequency_cutoff is not None:
-            sequence.setChannelFilterCompensation(channel, 'HP', order=1, f_cut=frequency_cutoff)
+            f_cut = frequency_cutoff
+            if isinstance(f_cut, dict):
+                f_cut = f_cut[channel]
+            sequence.setChannelFilterCompensation(channel, 'HP', order=cutoff_order, f_cut=f_cut)
 
     # Configure sequencing of elements
     for k, element in enumerate(elements, start=1):
@@ -214,9 +276,49 @@ def create_sequence(
     if plot:
         plotter(sequence)
         plt.show()
+
+    if not hasattr(qc.Station.default, 'pulse_sequence'):
+        pulse_sequence = PulseSequence('pulse_sequence')
+        qc.Station.default.add_component(pulse_sequence)
+    pulse_sequence = qc.Station.default.pulse_sequence
+    pulse_sequence.pulses = pulses
     
     return {
         'elements': elements,
         'sequence': sequence,
         'package': package,
     }
+
+
+def add_final_compensation_pulse(pulses, duration, channels=2):
+    amplitude_duration = [0] * channels
+    for pulse in pulses:
+        if isinstance(pulse, DCPulse):
+            amplitude = pulse.amplitude
+            if isinstance(amplitude, (int, float)):
+                amplitude = (amplitude,) * channels
+
+            for k in range(channels):
+                amplitude_duration[k] += amplitude[k] * pulse.duration
+        elif isinstance(pulse, RampPulse):
+            amplitude_start = pulse.amplitude_start
+            if isinstance(amplitude_start, (int, float)):
+                amplitude_start = (amplitude_start,) * channels
+            amplitude_stop = pulse.amplitude_stop
+            if isinstance(amplitude_stop, (int, float)):
+                amplitude_stop = (amplitude_stop,) * channels
+
+            for k in range(channels):
+                amplitude_mean = (amplitude_start[k] + amplitude_stop[k]) / 2
+                amplitude_duration[k] += amplitude_mean * pulse.duration
+        elif isinstance(pulse, SinePulse):
+            offset = pulse.offset
+            if isinstance(offset, (int, float)):
+                offset = (offset,) * channels
+            for k in range(channels):
+                amplitude_duration[k] += offset[k] * pulse.duration
+        else:
+            raise NotImplementedError('Cannot determine compensation pulse')
+
+    compensation_amplitude = [-A_t / duration for A_t in amplitude_duration]
+    return DCPulse('compensation', duration=duration, amplitude=compensation_amplitude)
