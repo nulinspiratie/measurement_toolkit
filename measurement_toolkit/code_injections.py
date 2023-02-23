@@ -170,14 +170,17 @@ def inject_matplotlib_axis_get_colorbar():
 
 
 def inject_instrument_logging_filter():
-    from qcodes.logger import get_instrument_logger as original_get_instrument_logger
-    def patched_get_instrument_logger(instrument_instance, logger_name=None):
-        logger = original_get_instrument_logger(instrument_instance=instrument_instance, logger_name=logger_name)
-        if hasattr(logger, 'filter_function'):
-            logger.logger.filters = [logger.filter_function]
-        return logger
-    qc.logger.get_instrument_logger = patched_get_instrument_logger
-    qc.instrument.instrument_base.get_instrument_logger = patched_get_instrument_logger
+    try:
+        from qcodes.logger import get_instrument_logger as original_get_instrument_logger
+        def patched_get_instrument_logger(instrument_instance, logger_name=None):
+            logger = original_get_instrument_logger(instrument_instance=instrument_instance, logger_name=logger_name)
+            if hasattr(logger, 'filter_function'):
+                logger.logger.filters = [logger.filter_function]
+            return logger
+        qc.logger.get_instrument_logger = patched_get_instrument_logger
+        qc.instrument.instrument_base.get_instrument_logger = patched_get_instrument_logger
+    except ImportError:
+        pass
 inject_instrument_logging_filter()
 
 
