@@ -13,8 +13,6 @@ from qcodes.dataset import (
     initialise_or_create_database_at,
     load_by_run_spec,
     load_or_create_experiment,
-    MeasurementLoop,
-    Sweep,
 )
 from measurement_toolkit.tools.data_tools import smooth, convert_to_dataset
 from measurement_toolkit.tools.plot_tools import plot_data
@@ -279,6 +277,7 @@ def goto_next_charge_transition(
     target_accuracy=0.1,
     silent=True
 ):
+    from qcodes.dataset import MeasurementLoop, Sweep
     delay = qc.Station.default.t_lockin()
 
     # First go to flank of Coulomb peak
