@@ -28,7 +28,7 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-if "analysis" not in qc.config:
+if "analysis" not in qc.config.keys():
     qc.config.analysis = {}
 analysis_config = qc.config.analysis
 
