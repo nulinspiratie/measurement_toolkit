@@ -9,7 +9,6 @@ from warnings import warn
 from xarray import DataArray
 
 import qcodes as qc
-from qcodes.dataset.measurement_loop import running_measurement
 from qcodes.dataset.sqlite.queries import get_last_run
 from qcodes.dataset.sqlite.database import conn_from_dbpath_or_conn
 
@@ -131,7 +130,8 @@ def save_traces(
         folder: Folder path for trace file. If not set, the folder of the
             active loop dataset is used, with subfolder 'traces'.
             ``Layout.acquisition_channels``"""
-            
+    
+    from qcodes.dataset.measurement_loop import running_measurement
     msmt = running_measurement()
 
     if file_suffix is None:
