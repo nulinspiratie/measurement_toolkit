@@ -153,7 +153,7 @@ def initialize_config(
     chip_name, 
     experiment_name, 
     device_name, 
-    author, 
+    author=None, 
     create_db=False,
     database_idx=None, 
     use_mainfolder=True, 
@@ -195,7 +195,7 @@ def initialize_config(
     assert sample_holder in ['QDevil', 'Sydney']
 
     # Load config
-    if use_mainfolder:
+    if use_mainfolder and 'mainfolder' in config.user:
         root_dir = Path(config.user.mainfolder)
         assert root_dir.exists()
         # Configure qcodes.config
@@ -208,11 +208,18 @@ def initialize_config(
     config.user.device_name = device_name
     config.user.author = author
 
+    # Add default db location format
+    if 'db_location_format' not in config.core:
+        config.core.db_location_format = "{db_root_folder}\\{chip_name}_{experiment_name}\\Device {device_name}\\database_{incrementer}.db"
+
     # Format all entries derived from experiment properties
     for key, val in list(config.user.items()):
         if key.endswith('_format'):
             label = key.split('_format')[0]
             config.user[label] = val.format(**config.user)
+
+    # Add default definitions
+    sample_name = config.user.get("sample_name", f"{chip_name}#{device_name}")
 
     # Initialize database
     if 'db_location_format' in config.core:
@@ -228,15 +235,16 @@ def initialize_config(
     # Load experiment
     experiment = load_or_create_experiment(
         experiment_name=config.user.experiment_name,
-        sample_name=config.user.sample_name
+        sample_name=sample_name
     )
 
     # Print information
     if not silent:
+        if author is not None:
+            print(f'Author: {config.user.author}')
         print(
-            f'Author: {config.user.author}\n'
             f'Experiment: {qc.config.user.experiment_name}\n'
-            f'Device sample: {qc.config.user.sample_name}'
+            f'Device sample: {sample_name}'
         )
 
     # Initialize system_summary and gate_voltages ParameterContainers
