@@ -51,13 +51,26 @@ def prepare_notebook_for_conversion(notebook, input_code=True):
     for cell in new_notebook['cells']:
         if cell['cell_type'] != 'markdown':
             continue
-        if not cell['source'].startswith('#'):
+        elif len(cell['source']) < 2:
             continue
-        if len(cell['source']) < 2:
+        
+        modified_lines = []
+        for line in cell['source'].split('\n'):
+            if not line.startswith('#'):
+                modified_lines.append(line)
+            elif not line[1].isdigit():
+                modified_lines.append(line)
+            else:
+                modified_lines.append('✎' + line)
+        cell['source'] = '\n'.join(modified_lines)
+
+    # Remove errors
+    for cell in new_notebook['cells']:
+        if not 'outputs' in cell:
             continue
-        if not cell['source'][1].isdigit():
-            continue
-        cell['source'] = '✎' + cell['source']
+        cell['outputs'] = [
+            output for output in cell['outputs'] if not output['output_type'] == 'error'
+        ]
 
     # Remove plot object outputs
     for cell in new_notebook['cells']:
@@ -95,7 +108,7 @@ def export_notebook(notebook_name=None, input_code=False, output='html'):
         notebook_name = get_notebook_path().name
 
     notebook_path = Path(notebook_name).with_suffix('.ipynb')
-    assert notebook_path.exists()
+    assert notebook_path.exists(), f"notebook file not found: {notebook_path}"
     print(f'Converting notebook "{notebook_path}"')
 
     if output != 'html':

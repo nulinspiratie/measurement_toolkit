@@ -9,5 +9,5 @@ if __name__ == '__main__':
     assert notebook_path.exists()
 
     export_notebook(
-        notebook_name=notebook_path.name
+        notebook_name=notebook_path
     )
